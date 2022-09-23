@@ -165,11 +165,12 @@ fn download_chunk(
     } else {
         log::info!("Chunk downloaded with status: {:?}", status);
     }
-    let mut buf_vec: Vec<u8> = vec![];
+    let mut buf_vec: Vec<u8> = Vec::with_capacity(content_length);
     //let mut file = Cursor::new(buf_vec);
     //std::io::copy(&mut response, &mut file).unwrap();
     response.read_to_end(&mut buf_vec)?;
 
+    assert!(content_length == range.end - range.start);
     assert!(buf_vec.len() == range.end - range.start);
     log::debug!(
         "Chunk downloaded: range {:?} / {}",
@@ -214,8 +215,8 @@ fn decode_loop<T: Read>(
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let url = "http://mumbai-main.golem.network:14372/beacon.tar.lz4";
-    //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
+    //let url = "http://mumbai-main.golem.network:14372/beacon.tar.lz4";
+    let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
 
     let client = reqwest::blocking::Client::new();
     let response = client.head(url).send()?;
@@ -319,11 +320,12 @@ fn main() -> anyhow::Result<()> {
                 convert(progress.total_downloaded as f64),
                 convert(progress.total_unpacked as f64)
             );
+            if t3.is_finished() {
+                break;
+            }
         }
         thread::sleep(Duration::from_millis(100));
     }
-
-
 
     t1.join().unwrap();
     t2.join().unwrap();
