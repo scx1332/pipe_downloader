@@ -11,11 +11,25 @@ use std::ptr::addr_of_mut;
 use std::str::FromStr;
 use std::sync::mpsc::sync_channel;
 use std::thread;
+use lazy_static::lazy_static;
 use tar::Archive;
+use std::sync::Mutex;
+use std::time::Duration;
 
-const CHUNK_SIZE_DOWNLOADER: usize = 100 * 1000 * 1000;
-const CHUNK_SIZE_DECODER: usize = 100 * 1000 * 1000;
+const CHUNK_SIZE_DOWNLOADER: usize = 30 * 1000 * 1000;
+const CHUNK_SIZE_DECODER: usize = 10 * 1000 * 1000;
 
+struct ProgressContext {
+    total_downloaded: usize,
+    total_unpacked: usize,
+}
+
+lazy_static! {
+    static ref PROGRESS: Mutex<ProgressContext> = Mutex::new(ProgressContext {
+        total_downloaded: 0,
+        total_unpacked: 0,
+    });
+}
 
 struct PartialRangeIter {
     start: u64,
@@ -94,9 +108,9 @@ pub fn convert(num: f64) -> String {
 
 impl Read for Pipe {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        if self.pos > self.report_progress + 10000000 {
+        if self.pos > self.report_progress + 100000 {
             if !self.progress_message.is_empty() {
-                println!("{}: {}", self.progress_message, convert(self.pos as f64));
+                log::debug!("{}: {}", self.progress_message, convert(self.pos as f64));
             }
             self.report_progress = self.pos;
         }
@@ -184,12 +198,16 @@ fn decode_loop<T: Read>(
             break;
         }
         unpacked_size += bytes_read;
+        {
+            let mut progress = PROGRESS.lock().unwrap();
+            progress.total_unpacked = unpacked_size;
+        }
 
-        println!("Decode loop, Unpacked size: {}", convert(unpacked_size as f64));
+        log::debug!("Decode loop, Unpacked size: {}", convert(unpacked_size as f64));
         buf.resize(bytes_read, 0);
         send.send(buf)?;
     }
-    println!("Finishing decode loop");
+    log::info!("Finishing decode loop");
     Ok(())
 }
 
@@ -212,7 +230,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut output_file = File::create("download.bin")?;
 
-    println!("starting download...");
+    log::info!("starting download...");
     let (send, recv) = sync_channel(1);
     /*for range in PartialRangeIter::new(0, length - 1, CHUNK_SIZE)? {
         println!("range {:?} / {}", range, length);
@@ -238,6 +256,11 @@ fn main() -> anyhow::Result<()> {
             };
             let client = reqwest::blocking::Client::new();
 
+            {
+                let mut progress = PROGRESS.lock().unwrap();
+                progress.total_downloaded = i * chunk_size;
+
+            }
             let current_buf = download_chunk(url, client, range).unwrap();
             send.send(current_buf).unwrap();
         }
@@ -284,9 +307,23 @@ fn main() -> anyhow::Result<()> {
 
     //let mut br = BufReader::new(p2);
     //std::io::copy(&mut br, &mut output_file)?;
+    let t3 = thread::spawn(move || {
+        let mut archive = Archive::new(p2);
+        archive.unpack("download").unwrap();
+    });
+    loop {
+        {
+            let mut progress = PROGRESS.lock().unwrap();
+            println!(
+                "downloaded: {}, unpacked: {}",
+                convert(progress.total_downloaded as f64),
+                convert(progress.total_unpacked as f64)
+            );
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
 
-    let mut archive = Archive::new(p2);
-    archive.unpack("download")?;
+
 
     t1.join().unwrap();
     t2.join().unwrap();
