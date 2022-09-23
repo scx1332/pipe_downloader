@@ -1,15 +1,15 @@
+use anyhow;
+use log;
+use lz4::{Decoder, EncoderBuilder};
+use reqwest::blocking::Client;
 use reqwest::header::{HeaderValue, CONTENT_LENGTH, RANGE};
 use reqwest::StatusCode;
 use std::fs::File;
-use std::str::FromStr;
-use reqwest::blocking::Client;
-use anyhow;
-use lz4::{Decoder, EncoderBuilder};
 use std::io::{BufReader, Cursor, Read};
 use std::ptr::addr_of_mut;
+use std::str::FromStr;
 use std::sync::mpsc::channel;
 use std::thread;
-use log;
 
 struct PartialRangeIter {
     start: u64,
@@ -38,7 +38,10 @@ impl Iterator for PartialRangeIter {
         } else {
             let prev_start = self.start;
             self.start += std::cmp::min(self.buffer_size as u64, self.end - self.start + 1);
-            Some(HeaderValue::from_str(&format!("bytes={}-{}", prev_start, self.start - 1)).expect("string provided by format!"))
+            Some(
+                HeaderValue::from_str(&format!("bytes={}-{}", prev_start, self.start - 1))
+                    .expect("string provided by format!"),
+            )
         }
     }
 }
@@ -53,7 +56,6 @@ fn decompress(source: &Path, destination: &Path) -> Result<()> {
 
     Ok(())
 }*/
-
 
 struct Pipe {
     pos: usize,
@@ -80,7 +82,11 @@ impl Read for Pipe {
             self.current_buf_pos += 1;
             self.pos += 1;
         }
-        log::debug!("Chunk read: starting_pos: {} / length: {}", starting_pos, self.pos - starting_pos);
+        log::debug!(
+            "Chunk read: starting_pos: {} / length: {}",
+            starting_pos,
+            self.pos - starting_pos
+        );
         return Ok(min_val);
 
         let mut bytes_read: usize = 0;
@@ -96,15 +102,26 @@ impl Read for Pipe {
     }
 }
 
-
-fn download_chunk(url: &str, client: reqwest::blocking::Client, range: std::ops::Range<usize>) -> anyhow::Result<Vec<u8>> {
-    log::debug!("Downloading chunk: range {:?} / {}", range, range.end - range.start);
+fn download_chunk(
+    url: &str,
+    client: reqwest::blocking::Client,
+    range: std::ops::Range<usize>,
+) -> anyhow::Result<Vec<u8>> {
+    log::debug!(
+        "Downloading chunk: range {:?} / {}",
+        range,
+        range.end - range.start
+    );
 
     let header = format!("bytes={}-{}", range.start, range.end - 1);
     let mut response = client.get(url).header("Range", header).send()?;
 
     let status = response.status();
-    let content_length = response.headers().get("Content-Length").ok_or(anyhow::anyhow!("Content-Length header not found"))?.to_str()?;
+    let content_length = response
+        .headers()
+        .get("Content-Length")
+        .ok_or(anyhow::anyhow!("Content-Length header not found"))?
+        .to_str()?;
     let content_length = usize::from_str(content_length)?;
 
     if !(status == StatusCode::OK || status == StatusCode::PARTIAL_CONTENT) {
@@ -118,7 +135,11 @@ fn download_chunk(url: &str, client: reqwest::blocking::Client, range: std::ops:
     response.read_to_end(&mut buf_vec)?;
 
     assert!(buf_vec.len() == range.end - range.start);
-    log::debug!("Chunk downloaded: range {:?} / {}", range, range.end - range.start);
+    log::debug!(
+        "Chunk downloaded: range {:?} / {}",
+        range,
+        range.end - range.start
+    );
 
     return Ok(buf_vec);
 
@@ -137,8 +158,11 @@ fn main() -> anyhow::Result<()> {
     let length = response
         .headers()
         .get(CONTENT_LENGTH)
-        .ok_or("response doesn't include the content length").unwrap();
-    let length = usize::from_str(length.to_str()?).map_err(|_| "invalid Content-Length header").unwrap();
+        .ok_or("response doesn't include the content length")
+        .unwrap();
+    let length = usize::from_str(length.to_str()?)
+        .map_err(|_| "invalid Content-Length header")
+        .unwrap();
 
     let mut output_file = File::create("download.bin")?;
 
@@ -170,9 +194,14 @@ fn main() -> anyhow::Result<()> {
             let current_buf = download_chunk(url, client, range).unwrap();
             send.send(current_buf).unwrap();
         }
-
     });
-    let mut p = Pipe { pos: 0, file_size: length, receiver: recv, current_buf: vec![], current_buf_pos: 0 };
+    let mut p = Pipe {
+        pos: 0,
+        file_size: length,
+        receiver: recv,
+        current_buf: vec![],
+        current_buf_pos: 0,
+    };
     //while let Ok(current_buf) = recv.recv() {
     std::io::copy(&mut p, &mut output_file)?;
     //}
