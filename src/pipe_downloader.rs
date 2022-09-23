@@ -7,12 +7,12 @@ use reqwest::StatusCode;
 use std::fs::File;
 use std::io::Read;
 
-use lazy_static::lazy_static;
+
 use std::str::FromStr;
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::thread::JoinHandle;
+
 use std::time::Duration;
 use tar::Archive;
 
@@ -32,13 +32,14 @@ pub struct PipeDownloader {
     url: String,
     progress_context: Arc<Mutex<ProgressContext>>,
     download_started: bool,
+    target_path: String,
     t1: Option<thread::JoinHandle<()>>,
     t2: Option<thread::JoinHandle<()>>,
     t3: Option<thread::JoinHandle<()>>,
 }
 
 impl PipeDownloader {
-    pub fn new(url: &str) -> Self {
+    pub fn new(url: &str, target_path: &str) -> Self {
         Self {
             url: url.to_string(),
             progress_context: Arc::new(Mutex::new(ProgressContext {
@@ -49,6 +50,7 @@ impl PipeDownloader {
                 paused: false,
             })),
             download_started: false,
+            target_path: target_path.to_string(),
             t1: None,
             t2: None,
             t3: None,
@@ -258,11 +260,11 @@ impl PipeDownloader {
     }
 
     pub fn start_download(self: &mut PipeDownloader) -> anyhow::Result<()> {
-        let url = "http://mumbai-main.golem.network:14372/beacon.tar.lz4";
+        let url = self.url.clone();
         //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
 
         let client = reqwest::blocking::Client::new();
-        let response = client.head(url).send()?;
+        let response = client.head(&url).send()?;
         let length = response
             .headers()
             .get(CONTENT_LENGTH)
@@ -272,12 +274,12 @@ impl PipeDownloader {
             .map_err(|_| "invalid Content-Length header")
             .unwrap();
 
-        let _output_file = File::create("download.bin")?;
 
         log::info!("starting download...");
         let (send_download_chunks, receive_download_chunks) = sync_channel(1);
 
         let pc = self.progress_context.clone();
+        let download_url = url.clone();
         self.t1 = Some(thread::spawn(move || {
             let chunk_size = CHUNK_SIZE_DOWNLOADER;
 
@@ -304,7 +306,7 @@ impl PipeDownloader {
                         thread::sleep(Duration::from_secs(5));
                         continue;
                     }
-                    match download_chunk(pc.clone(), url, &client, &range)
+                    match download_chunk(pc.clone(), &download_url, &client, &range)
                     {
                         Ok(buf) => {
                             {
@@ -356,11 +358,12 @@ impl PipeDownloader {
         let (send_unpack_chunks, receive_unpack_chunks) = sync_channel(1);
 
         let pc = self.progress_context.clone();
+        let download_url = url.clone();
         self.t2 = Some(thread::spawn(move || {
-            if url.ends_with(".gz") {
+            if download_url.ends_with(".gz") {
                 let mut gz = GzDecoder::new(&mut p);
                 decode_loop(pc.clone(), &mut gz, send_unpack_chunks).unwrap();
-            } else if url.ends_with(".lz4") {
+            } else if download_url.ends_with(".lz4") {
                 let mut lz4 = lz4::Decoder::new(&mut p).unwrap();
                 decode_loop(pc.clone(), &mut lz4, send_unpack_chunks).unwrap();
             } else {
@@ -368,7 +371,7 @@ impl PipeDownloader {
             };
         }));
 
-        let p2 = Pipe {
+        let mut p2 = Pipe {
             pos: 0,
             receiver: receive_unpack_chunks,
             current_buf: vec![],
@@ -377,20 +380,32 @@ impl PipeDownloader {
             progress_message: "Unpacking".to_string(),
         };
 
-        //let mut br = BufReader::new(p2);
-        //std::io::copy(&mut br, &mut output_file)?;
-        self.t3 = Some(thread::spawn(move || {
-            let mut archive = Archive::new(p2);
-            match archive.unpack("download") {
-                Ok(_) => {
-                    log::info!("Successfully unpacked")
+        let target_path = self.target_path.clone();
+        if url.contains(".tar.") {
+            self.t3 = Some(thread::spawn(move || {
+                let mut archive = Archive::new(p2);
+                match archive.unpack(target_path) {
+                    Ok(_) => {
+                        log::info!("Successfully unpacked")
+                    }
+                    Err(err) => {
+                        log::error!("Error while unpacking {:?}", err);
+                    }
                 }
-                Err(err) => {
-                    log::error!("Error while unpacking {:?}", err);
-                }
-            }
-        }));
-
+            }));
+        } else {
+            let mut output_file = File::create(&target_path)?;
+            self.t3 = Some(thread::spawn(move || {
+                match std::io::copy(&mut p2, &mut output_file) {
+                    Ok(_) => {
+                        log::info!("Successfully written file {}", target_path);
+                    }
+                    Err(err) => {
+                        log::error!("Error while writing {:?}", err);
+                    }
+                };
+            }));
+        }
 
         //while let Ok(current_buf) = recv.recv() {
         //std::io::copy(&mut p, &mut output_file)?;
@@ -399,7 +414,6 @@ impl PipeDownloader {
         //let content = response.text()?;
         //std::io::copy(&mut content.as_bytes(), &mut output_file)?;
 
-        println!("Finished with success!");
         Ok(())
     }
     pub fn wait_for_finish(self : &mut PipeDownloader) {
