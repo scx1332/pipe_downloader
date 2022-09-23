@@ -1,20 +1,19 @@
 use anyhow;
 use flate2::read::GzDecoder;
 use log;
-use lz4::{Decoder, EncoderBuilder};
-use reqwest::blocking::Client;
-use reqwest::header::{HeaderValue, CONTENT_LENGTH, RANGE};
+
+use reqwest::header::CONTENT_LENGTH;
 use reqwest::StatusCode;
 use std::fs::File;
-use std::io::{BufReader, Cursor, Read, Write};
-use std::ptr::addr_of_mut;
+use std::io::Read;
+
+use lazy_static::lazy_static;
 use std::str::FromStr;
 use std::sync::mpsc::sync_channel;
-use std::thread;
-use lazy_static::lazy_static;
-use tar::Archive;
 use std::sync::Mutex;
+use std::thread;
 use std::time::Duration;
+use tar::Archive;
 
 const CHUNK_SIZE_DOWNLOADER: usize = 30 * 1000 * 1000;
 const CHUNK_SIZE_DECODER: usize = 10 * 1000 * 1000;
@@ -30,52 +29,6 @@ lazy_static! {
         total_unpacked: 0,
     });
 }
-
-struct PartialRangeIter {
-    start: u64,
-    end: u64,
-    buffer_size: u32,
-}
-
-impl PartialRangeIter {
-    pub fn new(start: u64, end: u64, buffer_size: u32) -> anyhow::Result<Self> {
-        if buffer_size == 0 {
-            anyhow::anyhow!("invalid buffer_size, give a value greater than zero.");
-        }
-        Ok(PartialRangeIter {
-            start,
-            end,
-            buffer_size,
-        })
-    }
-}
-
-impl Iterator for PartialRangeIter {
-    type Item = HeaderValue;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.start > self.end {
-            None
-        } else {
-            let prev_start = self.start;
-            self.start += std::cmp::min(self.buffer_size as u64, self.end - self.start + 1);
-            Some(
-                HeaderValue::from_str(&format!("bytes={}-{}", prev_start, self.start - 1))
-                    .expect("string provided by format!"),
-            )
-        }
-    }
-}
-
-/*
-fn decompress(source: &Path, destination: &Path) -> Result<()> {
-    println!("Decompressing: {} -> {}", source.display(), destination.display());
-
-    let mut decoder = Decoder::new(input_file)?;
-    let mut output_file = File::create(destination)?;
-    io::copy(&mut decoder, &mut output_file)?;
-
-    Ok(())
-}*/
 
 struct Pipe {
     pos: usize,
@@ -161,7 +114,7 @@ fn download_chunk(
     let content_length = usize::from_str(content_length)?;
 
     if !(status == StatusCode::OK || status == StatusCode::PARTIAL_CONTENT) {
-        anyhow::anyhow!("unexpected status code: {}", status);
+        return Err(anyhow::anyhow!("unexpected status code: {}", status));
     } else {
         log::info!("Chunk downloaded with status: {:?}", status);
     }
@@ -204,7 +157,10 @@ fn decode_loop<T: Read>(
             progress.total_unpacked = unpacked_size;
         }
 
-        log::debug!("Decode loop, Unpacked size: {}", convert(unpacked_size as f64));
+        log::debug!(
+            "Decode loop, Unpacked size: {}",
+            convert(unpacked_size as f64)
+        );
         buf.resize(bytes_read, 0);
         send.send(buf)?;
     }
@@ -213,7 +169,6 @@ fn decode_loop<T: Read>(
 }
 
 pub fn download() -> anyhow::Result<()> {
-
     let url = "http://mumbai-main.golem.network:14372/beacon.tar.lz4";
     //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
 
@@ -228,7 +183,7 @@ pub fn download() -> anyhow::Result<()> {
         .map_err(|_| "invalid Content-Length header")
         .unwrap();
 
-    let mut output_file = File::create("download.bin")?;
+    let _output_file = File::create("download.bin")?;
 
     log::info!("starting download...");
     let (send, recv) = sync_channel(1);
@@ -244,7 +199,7 @@ pub fn download() -> anyhow::Result<()> {
     }*/
 
     let t1 = thread::spawn(move || {
-        const chunk_size: usize = CHUNK_SIZE_DOWNLOADER;
+        let chunk_size = CHUNK_SIZE_DOWNLOADER;
         for i in 0..(length / chunk_size + 1) {
             let max_length = std::cmp::min(chunk_size, length - i * chunk_size);
             if max_length == 0 {
@@ -259,7 +214,6 @@ pub fn download() -> anyhow::Result<()> {
             {
                 let mut progress = PROGRESS.lock().unwrap();
                 progress.total_downloaded = i * chunk_size;
-
             }
             let current_buf = download_chunk(url, client, range).unwrap();
             send.send(current_buf).unwrap();
@@ -296,7 +250,7 @@ pub fn download() -> anyhow::Result<()> {
         };
     });
 
-    let mut p2 = Pipe {
+    let p2 = Pipe {
         pos: 0,
         receiver: recv2,
         current_buf: vec![],
@@ -313,7 +267,7 @@ pub fn download() -> anyhow::Result<()> {
     });
     loop {
         {
-            let mut progress = PROGRESS.lock().unwrap();
+            let progress = PROGRESS.lock().unwrap();
             println!(
                 "downloaded: {}, unpacked: {}",
                 convert(progress.total_downloaded as f64),
