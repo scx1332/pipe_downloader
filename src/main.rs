@@ -63,10 +63,29 @@ struct Pipe {
     receiver: std::sync::mpsc::Receiver<Vec<u8>>,
     current_buf: Vec<u8>,
     current_buf_pos: usize,
+    report_progress: usize
+}
+
+pub fn convert(num: f64) -> String {
+    let negative = if num.is_sign_positive() { "" } else { "-" };
+    let num = num.abs();
+    let units = ["B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+    if num < 1_f64 {
+        return format!("{}{} {}", negative, num, "B");
+    }
+    let delimiter = 1000_f64;
+    let exponent = std::cmp::min((num.ln() / delimiter.ln()).floor() as i32, (units.len() - 1) as i32);
+    let pretty_bytes = format!("{:.2}", num / delimiter.powi(exponent)).parse::<f64>().unwrap() * 1_f64;
+    let unit = units[exponent as usize];
+    format!("{}{} {}", negative, pretty_bytes, unit)
 }
 
 impl Read for Pipe {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.pos > self.report_progress + 10000000 {
+            println!("Progress: {}", convert(self.pos as f64));
+            self.report_progress = self.pos;
+        }
         let starting_pos = self.pos;
         if self.current_buf.is_empty() || self.current_buf_pos >= self.current_buf.len() {
             let res = self.receiver.recv();
@@ -149,9 +168,9 @@ fn download_chunk(
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    //let url = "http://mumbai-main.golem.network:14372/beacon.tar.lz4";
-    let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
-    const CHUNK_SIZE: usize = 50000;
+    let url = "http://mumbai-main.golem.network:14372/beacon.tar.lz4";
+    //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
+    const CHUNK_SIZE: usize = 50000000;
 
     let client = reqwest::blocking::Client::new();
     let response = client.head(url).send()?;
@@ -201,6 +220,7 @@ fn main() -> anyhow::Result<()> {
         receiver: recv,
         current_buf: vec![],
         current_buf_pos: 0,
+        report_progress: 0
     };
     //while let Ok(current_buf) = recv.recv() {
     std::io::copy(&mut p, &mut output_file)?;
