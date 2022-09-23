@@ -24,8 +24,8 @@ fn main() -> anyhow::Result<()> {
         }
         let elapsed = current_time.elapsed();
         if elapsed.as_secs() > 30 {
-            //pd.signal_stop();
-            //break;
+            pd.pause_download();
+            break;
         }
         thread::sleep(Duration::from_millis(100));
     }

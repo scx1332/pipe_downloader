@@ -25,6 +25,7 @@ pub struct ProgressContext {
     pub chunk_downloaded: usize,
     pub total_unpacked: usize,
     pub stop_requested: bool,
+    pub paused: bool,
 }
 
 pub struct PipeDownloader {
@@ -45,6 +46,7 @@ impl PipeDownloader {
                 total_unpacked: 0,
                 chunk_downloaded: 0,
                 stop_requested: false,
+                paused: false,
             })),
             download_started: false,
             t1: None,
@@ -157,7 +159,9 @@ fn download_chunk(
         {
             let mut progress_context = progress_context.lock().unwrap();
             progress_context.chunk_downloaded += n;
-
+            if progress_context.paused {
+                return Err(anyhow::anyhow!("Download paused"));
+            }
             if progress_context.stop_requested {
                 return Err(anyhow::anyhow!("Stop requested"));
             }
@@ -227,6 +231,15 @@ impl PipeDownloader {
         let mut pc = self.progress_context.lock().expect("Failed to lock progress context");
         pc.stop_requested = true;
     }
+    pub fn pause_download(self: &PipeDownloader) {
+        let mut pc = self.progress_context.lock().expect("Failed to lock progress context");
+        pc.paused = true;
+    }
+    pub fn resume_download(self: &PipeDownloader) {
+        let mut pc = self.progress_context.lock().expect("Failed to lock progress context");
+        pc.paused = false;
+    }
+
     pub fn is_finished(self: &PipeDownloader) -> bool {
         if let Some(t3) = self.t3.as_ref() {
             t3.is_finished()
@@ -280,6 +293,17 @@ impl PipeDownloader {
                 let client = reqwest::blocking::Client::new();
 
                 loop {
+                    let progress = {
+                        pc.lock().unwrap().clone()
+                    };
+                    if progress.stop_requested {
+                        break 'range_loop;
+                    }
+                    if progress.paused {
+                        log::info!("Download still paused...");
+                        thread::sleep(Duration::from_secs(5));
+                        continue;
+                    }
                     match download_chunk(pc.clone(), url, &client, &range)
                     {
                         Ok(buf) => {
@@ -300,13 +324,18 @@ impl PipeDownloader {
                             break;
                         }
                         Err(err) => {
-                            log::warn!("Error while downloading chunk, trying again: {:?}", err);
-                            {
+                            let progress = {
                                 let mut progress = pc.lock().unwrap();
                                 progress.chunk_downloaded = 0;
-                                if progress.stop_requested {
-                                    break 'range_loop;
-                                }
+                                progress.clone()
+                            };
+                            if progress.stop_requested {
+                                break 'range_loop;
+                            }
+                            if progress.paused {
+                                log::info!("Download paused, trying again");
+                            } else {
+                                log::warn!("Error while downloading chunk, trying again: {:?}", err);
                             }
                             thread::sleep(Duration::from_secs(5));
                         }
