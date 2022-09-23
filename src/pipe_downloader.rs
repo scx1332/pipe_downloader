@@ -10,24 +10,48 @@ use std::io::Read;
 use lazy_static::lazy_static;
 use std::str::FromStr;
 use std::sync::mpsc::sync_channel;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
+use std::thread::JoinHandle;
 use std::time::Duration;
 use tar::Archive;
 
 const CHUNK_SIZE_DOWNLOADER: usize = 30 * 1000 * 1000;
 const CHUNK_SIZE_DECODER: usize = 10 * 1000 * 1000;
 
-struct ProgressContext {
-    total_downloaded: usize,
-    total_unpacked: usize,
+#[derive(Debug, Clone, Copy)]
+pub struct ProgressContext {
+    pub total_downloaded: usize,
+    pub chunk_downloaded: usize,
+    pub total_unpacked: usize,
+    pub stop_requested: bool,
 }
 
-lazy_static! {
-    static ref PROGRESS: Mutex<ProgressContext> = Mutex::new(ProgressContext {
-        total_downloaded: 0,
-        total_unpacked: 0,
-    });
+pub struct PipeDownloader {
+    url: String,
+    progress_context: Arc<Mutex<ProgressContext>>,
+    download_started: bool,
+    t1: Option<thread::JoinHandle<()>>,
+    t2: Option<thread::JoinHandle<()>>,
+    t3: Option<thread::JoinHandle<()>>,
+}
+
+impl PipeDownloader {
+    pub fn new(url: &str) -> Self {
+        Self {
+            url: url.to_string(),
+            progress_context: Arc::new(Mutex::new(ProgressContext {
+                total_downloaded: 0,
+                total_unpacked: 0,
+                chunk_downloaded: 0,
+                stop_requested: false,
+            })),
+            download_started: false,
+            t1: None,
+            t2: None,
+            t3: None,
+        }
+    }
 }
 
 struct Pipe {
@@ -92,9 +116,10 @@ impl Read for Pipe {
 }
 
 fn download_chunk(
+    progress_context: Arc<Mutex<ProgressContext>>,
     url: &str,
-    client: reqwest::blocking::Client,
-    range: std::ops::Range<usize>,
+    client: &reqwest::blocking::Client,
+    range: &std::ops::Range<usize>,
 ) -> anyhow::Result<Vec<u8>> {
     log::debug!(
         "Downloading chunk: range {:?} / {}",
@@ -121,10 +146,33 @@ fn download_chunk(
     let mut buf_vec: Vec<u8> = Vec::with_capacity(content_length);
     //let mut file = Cursor::new(buf_vec);
     //std::io::copy(&mut response, &mut file).unwrap();
-    response.read_to_end(&mut buf_vec)?;
 
-    assert!(content_length == range.end - range.start);
-    assert!(buf_vec.len() == range.end - range.start);
+    let mut buf = vec![0; 1024 * 1024];
+    loop {
+        let n = response.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        buf_vec.extend_from_slice(&buf[..n]);
+        {
+            let mut progress_context = progress_context.lock().unwrap();
+            progress_context.chunk_downloaded += n;
+
+            if progress_context.stop_requested {
+                return Err(anyhow::anyhow!("Stop requested"));
+            }
+        }
+    }
+    if buf_vec.len() != content_length {
+        return Err(anyhow::anyhow!(
+            "unexpected content length: {}",
+            buf_vec.len()
+        ));
+    }
+
+    //response.read_to_end(&mut buf_vec)?;
+    assert_eq!(content_length, range.end - range.start);
+    assert_eq!(buf_vec.len(), range.end - range.start);
     log::debug!(
         "Chunk downloaded: range {:?} / {}",
         range,
@@ -134,7 +182,10 @@ fn download_chunk(
     return Ok(buf_vec);
 }
 
+
+
 fn decode_loop<T: Read>(
+    progress_context: Arc<Mutex<ProgressContext>>,
     decoder: &mut T,
     send: std::sync::mpsc::SyncSender<Vec<u8>>,
 ) -> anyhow::Result<()> {
@@ -153,8 +204,11 @@ fn decode_loop<T: Read>(
         }
         unpacked_size += bytes_read;
         {
-            let mut progress = PROGRESS.lock().unwrap();
+            let mut progress = progress_context.lock().unwrap();
             progress.total_unpacked = unpacked_size;
+            if progress.stop_requested {
+                break;
+            }
         }
 
         log::debug!(
@@ -168,128 +222,159 @@ fn decode_loop<T: Read>(
     Ok(())
 }
 
-pub fn download() -> anyhow::Result<()> {
-    let url = "http://mumbai-main.golem.network:14372/beacon.tar.lz4";
-    //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
-
-    let client = reqwest::blocking::Client::new();
-    let response = client.head(url).send()?;
-    let length = response
-        .headers()
-        .get(CONTENT_LENGTH)
-        .ok_or("response doesn't include the content length")
-        .unwrap();
-    let length = usize::from_str(length.to_str()?)
-        .map_err(|_| "invalid Content-Length header")
-        .unwrap();
-
-    let _output_file = File::create("download.bin")?;
-
-    log::info!("starting download...");
-    let (send, recv) = sync_channel(1);
-    /*for range in PartialRangeIter::new(0, length - 1, CHUNK_SIZE)? {
-        println!("range {:?} / {}", range, length);
-        let mut response = client.get(url).header(RANGE, range).send()?;
-
-        let status = response.status();
-        if !(status == StatusCode::OK || status == StatusCode::PARTIAL_CONTENT) {
-            anyhow::anyhow!("unexpected status code: {}", status);
-        }
-        std::io::copy(&mut response, &mut output_file)?;
-    }*/
-
-    let t1 = thread::spawn(move || {
-        let chunk_size = CHUNK_SIZE_DOWNLOADER;
-        for i in 0..(length / chunk_size + 1) {
-            let max_length = std::cmp::min(chunk_size, length - i * chunk_size);
-            if max_length == 0 {
-                break;
-            }
-            let range = std::ops::Range {
-                start: i * chunk_size,
-                end: i * chunk_size + max_length,
-            };
-            let client = reqwest::blocking::Client::new();
-
-            {
-                let mut progress = PROGRESS.lock().unwrap();
-                progress.total_downloaded = i * chunk_size;
-            }
-            let current_buf = download_chunk(url, client, range).unwrap();
-            send.send(current_buf).unwrap();
-        }
-        println!("Finishing thread 1");
-    });
-    let mut p = Pipe {
-        pos: 0,
-        receiver: recv,
-        current_buf: vec![],
-        current_buf_pos: 0,
-        report_progress: 0,
-        progress_message: "Downloading".to_string(),
-    };
-
-    let (send2, recv2) = sync_channel(1);
-
-    let t2 = thread::spawn(move || {
-        /*let decoder = if url.ends_with(".gz") {
-            GzDecoder::new(&mut p)
-        } else if url.ends_with(".lz4") {*/
-        // lz4::Decoder::new(&mut p).unwrap();
-        /*        } else {
-            panic!("Unknown file type");
-        };*/
-        if url.ends_with(".gz") {
-            let mut gz = GzDecoder::new(&mut p);
-            decode_loop(&mut gz, send2).unwrap();
-        } else if url.ends_with(".lz4") {
-            let mut lz4 = lz4::Decoder::new(&mut p).unwrap();
-            decode_loop(&mut lz4, send2).unwrap();
+impl PipeDownloader {
+    pub fn signal_stop(self: &PipeDownloader) {
+        let mut pc = self.progress_context.lock().expect("Failed to lock progress context");
+        pc.stop_requested = true;
+    }
+    pub fn is_finished(self: &PipeDownloader) -> bool {
+        if let Some(t3) = self.t3.as_ref() {
+            t3.is_finished()
         } else {
-            panic!("Unknown file type");
-        };
-    });
-
-    let p2 = Pipe {
-        pos: 0,
-        receiver: recv2,
-        current_buf: vec![],
-        current_buf_pos: 0,
-        report_progress: 0,
-        progress_message: "Unpacking".to_string(),
-    };
-
-    //let mut br = BufReader::new(p2);
-    //std::io::copy(&mut br, &mut output_file)?;
-    let t3 = thread::spawn(move || {
-        let mut archive = Archive::new(p2);
-        archive.unpack("download").unwrap();
-    });
-    loop {
-        {
-            let progress = PROGRESS.lock().unwrap();
-            println!(
-                "downloaded: {}, unpacked: {}",
-                convert(progress.total_downloaded as f64),
-                convert(progress.total_unpacked as f64)
-            );
-            if t3.is_finished() {
-                break;
-            }
+            false
         }
-        thread::sleep(Duration::from_millis(100));
     }
 
-    t1.join().unwrap();
-    t2.join().unwrap();
+    pub fn get_progress(self: &PipeDownloader) -> anyhow::Result<ProgressContext> {
+        let pc = self.progress_context.lock().expect("Failed to lock progress context");
+        let pc = pc.clone();
+        return Ok(pc);
+    }
+    fn download_loop() {
 
-    //while let Ok(current_buf) = recv.recv() {
-    //std::io::copy(&mut p, &mut output_file)?;
-    //}
-    //let mut br = BufReader::new(p);
-    //let content = response.text()?;
-    //std::io::copy(&mut content.as_bytes(), &mut output_file)?;
+    }
 
-    println!("Finished with success!");
-    Ok(())
+    pub fn start_download(self: &mut PipeDownloader) -> anyhow::Result<()> {
+        let url = "http://mumbai-main.golem.network:14372/beacon.tar.lz4";
+        //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
+
+        let client = reqwest::blocking::Client::new();
+        let response = client.head(url).send()?;
+        let length = response
+            .headers()
+            .get(CONTENT_LENGTH)
+            .ok_or("response doesn't include the content length")
+            .unwrap();
+        let length = usize::from_str(length.to_str()?)
+            .map_err(|_| "invalid Content-Length header")
+            .unwrap();
+
+        let _output_file = File::create("download.bin")?;
+
+        log::info!("starting download...");
+        let (send_download_chunks, receive_download_chunks) = sync_channel(1);
+
+        let pc = self.progress_context.clone();
+        self.t1 = Some(thread::spawn(move || {
+            let chunk_size = CHUNK_SIZE_DOWNLOADER;
+
+            'range_loop: for i in 0..(length / chunk_size + 1) {
+                let max_length = std::cmp::min(chunk_size, length - i * chunk_size);
+                if max_length == 0 {
+                    break;
+                }
+                let range = std::ops::Range {
+                    start: i * chunk_size,
+                    end: i * chunk_size + max_length,
+                };
+                let client = reqwest::blocking::Client::new();
+
+                loop {
+                    match download_chunk(pc.clone(), url, &client, &range)
+                    {
+                        Ok(buf) => {
+                            {
+                                let mut progress = pc.lock().unwrap();
+                                progress.total_downloaded += progress.chunk_downloaded;
+                                progress.chunk_downloaded = 0;
+                                if progress.stop_requested {
+                                    break 'range_loop;
+                                }
+                            }
+                            if let Err(err) = send_download_chunks.send(buf) {
+                                log::error!("Error while sending chunk: {:?}", err);
+                                let mut progress = pc.lock().unwrap();
+                                progress.stop_requested = true;
+                                break 'range_loop;
+                            }
+                            break;
+                        }
+                        Err(err) => {
+                            log::warn!("Error while downloading chunk, trying again: {:?}", err);
+                            {
+                                let mut progress = pc.lock().unwrap();
+                                progress.chunk_downloaded = 0;
+                                if progress.stop_requested {
+                                    break 'range_loop;
+                                }
+                            }
+                            thread::sleep(Duration::from_secs(5));
+                        }
+                    }
+                }
+            }
+            println!("Finishing thread 1");
+        }));
+        let mut p = Pipe {
+            pos: 0,
+            receiver: receive_download_chunks,
+            current_buf: vec![],
+            current_buf_pos: 0,
+            report_progress: 0,
+            progress_message: "Downloading".to_string(),
+        };
+
+        let (send_unpack_chunks, receive_unpack_chunks) = sync_channel(1);
+
+        let pc = self.progress_context.clone();
+        self.t2 = Some(thread::spawn(move || {
+            if url.ends_with(".gz") {
+                let mut gz = GzDecoder::new(&mut p);
+                decode_loop(pc.clone(), &mut gz, send_unpack_chunks).unwrap();
+            } else if url.ends_with(".lz4") {
+                let mut lz4 = lz4::Decoder::new(&mut p).unwrap();
+                decode_loop(pc.clone(), &mut lz4, send_unpack_chunks).unwrap();
+            } else {
+                panic!("Unknown file type");
+            };
+        }));
+
+        let p2 = Pipe {
+            pos: 0,
+            receiver: receive_unpack_chunks,
+            current_buf: vec![],
+            current_buf_pos: 0,
+            report_progress: 0,
+            progress_message: "Unpacking".to_string(),
+        };
+
+        //let mut br = BufReader::new(p2);
+        //std::io::copy(&mut br, &mut output_file)?;
+        self.t3 = Some(thread::spawn(move || {
+            let mut archive = Archive::new(p2);
+            match archive.unpack("download") {
+                Ok(_) => {
+                    log::info!("Successfully unpacked")
+                }
+                Err(err) => {
+                    log::error!("Error while unpacking {:?}", err);
+                }
+            }
+        }));
+
+
+        //while let Ok(current_buf) = recv.recv() {
+        //std::io::copy(&mut p, &mut output_file)?;
+        //}
+        //let mut br = BufReader::new(p);
+        //let content = response.text()?;
+        //std::io::copy(&mut content.as_bytes(), &mut output_file)?;
+
+        println!("Finished with success!");
+        Ok(())
+    }
+    pub fn wait_for_finish(self : &mut PipeDownloader) {
+        self.t1.take().unwrap().join().unwrap();
+        self.t2.take().unwrap().join().unwrap();
+    }
 }
