@@ -1,16 +1,17 @@
 use anyhow;
+use flate2::read::GzDecoder;
 use log;
 use lz4::{Decoder, EncoderBuilder};
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderValue, CONTENT_LENGTH, RANGE};
 use reqwest::StatusCode;
 use std::fs::File;
-use std::io::{BufReader, Cursor, Read};
+use std::io::{BufReader, Cursor, Read, Write};
 use std::ptr::addr_of_mut;
 use std::str::FromStr;
 use std::sync::mpsc::channel;
 use std::thread;
-use flate2::read::GzDecoder;
+use tar::Archive;
 
 struct PartialRangeIter {
     start: u64,
@@ -60,11 +61,11 @@ fn decompress(source: &Path, destination: &Path) -> Result<()> {
 
 struct Pipe {
     pos: usize,
-    file_size: usize,
     receiver: std::sync::mpsc::Receiver<Vec<u8>>,
     current_buf: Vec<u8>,
     current_buf_pos: usize,
-    report_progress: usize
+    report_progress: usize,
+    progress_message: String,
 }
 
 pub fn convert(num: f64) -> String {
@@ -75,8 +76,14 @@ pub fn convert(num: f64) -> String {
         return format!("{}{} {}", negative, num, "B");
     }
     let delimiter = 1000_f64;
-    let exponent = std::cmp::min((num.ln() / delimiter.ln()).floor() as i32, (units.len() - 1) as i32);
-    let pretty_bytes = format!("{:.2}", num / delimiter.powi(exponent)).parse::<f64>().unwrap() * 1_f64;
+    let exponent = std::cmp::min(
+        (num.ln() / delimiter.ln()).floor() as i32,
+        (units.len() - 1) as i32,
+    );
+    let pretty_bytes = format!("{:.2}", num / delimiter.powi(exponent))
+        .parse::<f64>()
+        .unwrap()
+        * 1_f64;
     let unit = units[exponent as usize];
     format!("{}{} {}", negative, pretty_bytes, unit)
 }
@@ -84,7 +91,9 @@ pub fn convert(num: f64) -> String {
 impl Read for Pipe {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.pos > self.report_progress + 10000000 {
-            println!("Progress: {}", convert(self.pos as f64));
+            if !self.progress_message.is_empty() {
+                println!("{}: {}", self.progress_message, convert(self.pos as f64));
+            }
             self.report_progress = self.pos;
         }
         let starting_pos = self.pos;
@@ -108,17 +117,6 @@ impl Read for Pipe {
             self.pos - starting_pos
         );
         return Ok(min_val);
-
-        let mut bytes_read: usize = 0;
-        for i in 0..buf.len() {
-            if self.pos >= self.file_size {
-                break;
-            }
-            self.pos += 1;
-            buf[i] = char::from_digit((i % 10) as u32, 10).unwrap() as u8;
-            bytes_read += 1;
-        }
-        Ok(bytes_read)
     }
 }
 
@@ -162,16 +160,42 @@ fn download_chunk(
     );
 
     return Ok(buf_vec);
+}
 
-    //std::io::copy(&mut response, &mut output_file)?;
+fn decode_loop<T: Read>(
+    decoder: &mut T,
+    send: std::sync::mpsc::Sender<Vec<u8>>,
+) -> anyhow::Result<()> {
+    let CHUNK_SIZE = 100000;
+    let mut unpacked_size = 0;
+    loop {
+        let mut buf = vec![0u8; CHUNK_SIZE];
+        let bytes_read = match decoder.read(&mut buf) {
+            Ok(bytes_read) => bytes_read,
+            Err(err) => {
+                log::error!("Error while reading from lz4 decoder {:?}", err);
+                break;
+            }
+        };
+        if bytes_read == 0 {
+            break;
+        }
+        unpacked_size += bytes_read;
+
+        println!("Unpacked_size: {}", convert(bytes_read as f64));
+        buf.resize(bytes_read, 0);
+        send.send(buf)?;
+    }
+    println!("Finishing thread 2");
+    Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let url = "http://mumbai-main.golem.network:14372/beacon.tar.lz4";
-    //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
-    const CHUNK_SIZE: usize = 100000000;
+    //let url = "http://mumbai-main.golem.network:14372/beacon.tar.lz4";
+    let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
+    const CHUNK_SIZE: usize = 100000;
 
     let client = reqwest::blocking::Client::new();
     let response = client.head(url).send()?;
@@ -214,30 +238,51 @@ fn main() -> anyhow::Result<()> {
             let current_buf = download_chunk(url, client, range).unwrap();
             send.send(current_buf).unwrap();
         }
+        println!("Finishing thread 1");
     });
     let mut p = Pipe {
         pos: 0,
-        file_size: length,
         receiver: recv,
         current_buf: vec![],
         current_buf_pos: 0,
-        report_progress: 0
+        report_progress: 0,
+        progress_message: "Downloading".to_string(),
     };
-    //let mut gzd = GzDecoder::new(&mut p);
-    let mut lz4 = lz4::Decoder::new(&mut p).unwrap();
-    //let in_buf = std::io::BufReader::with_capacity(CAPACITY, in_gz)
 
-    let mut unpacked_size = 0;
+    let (send2, recv2) = channel();
 
-    let mut buf = vec![0u8; CHUNK_SIZE];
-    loop {
-        unpacked_size += lz4.read(&mut buf)?;
-        println!("unpacked_size: {}", convert(unpacked_size as f64));
+    thread::spawn(move || {
+        /*let decoder = if url.ends_with(".gz") {
+            GzDecoder::new(&mut p)
+        } else if url.ends_with(".lz4") {*/
+        // lz4::Decoder::new(&mut p).unwrap();
+        /*        } else {
+            panic!("Unknown file type");
+        };*/
+        if url.ends_with(".gz") {
+            let mut gz = GzDecoder::new(&mut p);
+            decode_loop(&mut gz, send2).unwrap();
+        } else if url.ends_with(".lz4") {
+            let mut lz4 = lz4::Decoder::new(&mut p).unwrap();
+            decode_loop(&mut lz4, send2).unwrap();
+        } else {
+            panic!("Unknown file type");
+        };
+    });
 
+    let mut p2 = Pipe {
+        pos: 0,
+        receiver: recv2,
+        current_buf: vec![],
+        current_buf_pos: 0,
+        report_progress: 0,
+        progress_message: "Unpacking".to_string(),
+    };
 
-    }
-
-    std::io::copy(&mut lz4, &mut output_file)?;
+    let mut archive = Archive::new(p2);
+    archive.unpack("download")?;
+    println!("Finishing main thread");
+    thread::sleep(std::time::Duration::from_secs(100));
 
     //while let Ok(current_buf) = recv.recv() {
     //std::io::copy(&mut p, &mut output_file)?;
