@@ -10,6 +10,7 @@ use std::ptr::addr_of_mut;
 use std::str::FromStr;
 use std::sync::mpsc::channel;
 use std::thread;
+use flate2::read::GzDecoder;
 
 struct PartialRangeIter {
     start: u64,
@@ -170,7 +171,7 @@ fn main() -> anyhow::Result<()> {
 
     let url = "http://mumbai-main.golem.network:14372/beacon.tar.lz4";
     //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
-    const CHUNK_SIZE: usize = 50000000;
+    const CHUNK_SIZE: usize = 100000000;
 
     let client = reqwest::blocking::Client::new();
     let response = client.head(url).send()?;
@@ -222,8 +223,24 @@ fn main() -> anyhow::Result<()> {
         current_buf_pos: 0,
         report_progress: 0
     };
+    //let mut gzd = GzDecoder::new(&mut p);
+    let mut lz4 = lz4::Decoder::new(&mut p).unwrap();
+    //let in_buf = std::io::BufReader::with_capacity(CAPACITY, in_gz)
+
+    let mut unpacked_size = 0;
+
+    let mut buf = vec![0u8; CHUNK_SIZE];
+    loop {
+        unpacked_size += lz4.read(&mut buf)?;
+        println!("unpacked_size: {}", convert(unpacked_size as f64));
+
+
+    }
+
+    std::io::copy(&mut lz4, &mut output_file)?;
+
     //while let Ok(current_buf) = recv.recv() {
-    std::io::copy(&mut p, &mut output_file)?;
+    //std::io::copy(&mut p, &mut output_file)?;
     //}
     //let mut br = BufReader::new(p);
     //let content = response.text()?;
