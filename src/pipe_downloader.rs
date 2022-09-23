@@ -66,14 +66,10 @@ struct Pipe {
     progress_message: String,
 }
 
-pub fn convert(num: f64) -> String {
-    let negative = if num.is_sign_positive() { "" } else { "-" };
-    let num = num.abs();
+pub fn convert_bytes_to_human(bytes: usize) -> String {
     let units = ["B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-    if num < 1_f64 {
-        return format!("{}{} {}", negative, num, "B");
-    }
     let delimiter = 1000_f64;
+    let num = bytes as f64;
     let exponent = std::cmp::min(
         (num.ln() / delimiter.ln()).floor() as i32,
         (units.len() - 1) as i32,
@@ -83,14 +79,18 @@ pub fn convert(num: f64) -> String {
         .unwrap()
         * 1_f64;
     let unit = units[exponent as usize];
-    format!("{}{} {}", negative, pretty_bytes, unit)
+    format!("{} {}", pretty_bytes, unit)
 }
 
 impl Read for Pipe {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.pos > self.report_progress + 100000 {
             if !self.progress_message.is_empty() {
-                log::debug!("{}: {}", self.progress_message, convert(self.pos as f64));
+                log::debug!(
+                    "{}: {}",
+                    self.progress_message,
+                    convert_bytes_to_human(self.pos)
+                );
             }
             self.report_progress = self.pos;
         }
@@ -147,8 +147,6 @@ fn download_chunk(
         log::info!("Chunk downloaded with status: {:?}", status);
     }
     let mut buf_vec: Vec<u8> = Vec::with_capacity(content_length);
-    //let mut file = Cursor::new(buf_vec);
-    //std::io::copy(&mut response, &mut file).unwrap();
 
     let mut buf = vec![0; 1024 * 1024];
     loop {
@@ -175,9 +173,9 @@ fn download_chunk(
         ));
     }
 
-    //response.read_to_end(&mut buf_vec)?;
     assert_eq!(content_length, range.end - range.start);
     assert_eq!(buf_vec.len(), range.end - range.start);
+
     log::debug!(
         "Chunk downloaded: range {:?} / {}",
         range,
@@ -216,7 +214,7 @@ fn decode_loop<T: Read>(
 
         log::debug!(
             "Decode loop, Unpacked size: {}",
-            convert(unpacked_size as f64)
+            convert_bytes_to_human(unpacked_size)
         );
         buf.resize(bytes_read, 0);
         send.send(buf)?;
@@ -226,6 +224,7 @@ fn decode_loop<T: Read>(
 }
 
 impl PipeDownloader {
+    #[allow(unused)]
     pub fn signal_stop(self: &PipeDownloader) {
         let mut pc = self
             .progress_context
@@ -233,6 +232,8 @@ impl PipeDownloader {
             .expect("Failed to lock progress context");
         pc.stop_requested = true;
     }
+
+    #[allow(unused)]
     pub fn pause_download(self: &PipeDownloader) {
         let mut pc = self
             .progress_context
@@ -240,6 +241,8 @@ impl PipeDownloader {
             .expect("Failed to lock progress context");
         pc.paused = true;
     }
+
+    #[allow(unused)]
     pub fn resume_download(self: &PipeDownloader) {
         let mut pc = self
             .progress_context
@@ -415,13 +418,6 @@ impl PipeDownloader {
                 };
             }));
         }
-
-        //while let Ok(current_buf) = recv.recv() {
-        //std::io::copy(&mut p, &mut output_file)?;
-        //}
-        //let mut br = BufReader::new(p);
-        //let content = response.text()?;
-        //std::io::copy(&mut content.as_bytes(), &mut output_file)?;
 
         Ok(())
     }

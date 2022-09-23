@@ -4,7 +4,7 @@ use anyhow;
 use std::thread;
 use std::time::Duration;
 
-use crate::pipe_downloader::{convert, PipeDownloader};
+use crate::pipe_downloader::{convert_bytes_to_human, PipeDownloader};
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -19,8 +19,8 @@ fn main() -> anyhow::Result<()> {
         let progress = pd.get_progress()?;
         println!(
             "downloaded: {}, unpacked: {}",
-            convert((progress.total_downloaded + progress.chunk_downloaded) as f64),
-            convert(progress.total_unpacked as f64)
+            convert_bytes_to_human(progress.total_downloaded + progress.chunk_downloaded),
+            convert_bytes_to_human(progress.total_unpacked)
         );
         if pd.is_finished() {
             break;
