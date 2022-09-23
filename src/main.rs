@@ -215,8 +215,8 @@ fn decode_loop<T: Read>(
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    //let url = "http://mumbai-main.golem.network:14372/beacon.tar.lz4";
-    let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
+    let url = "http://mumbai-main.golem.network:14372/beacon.tar.lz4";
+    //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
 
     let client = reqwest::blocking::Client::new();
     let response = client.head(url).send()?;
