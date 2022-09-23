@@ -1,0 +1,70 @@
+name: Build for ARM
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+      - scx1332/*
+  pull_request:
+    branches:
+      - main
+      - release/*
+
+
+jobs:
+  build_arm:
+    name: Build Arm
+    env:
+      RUSTFLAGS: "-D warnings -C opt-level=z -C debuginfo=1"
+      X86_64_PC_WINDOWS_MSVC_OPENSSL_DIR: c:/vcpkg/installed/x64-windows
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Install last stable Rust cross compiler
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-unknown-linux-musl
+          override: true
+
+      - name: Build binary
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --release --target aarch64-unknown-linux-musl
+
+      - name: Pack
+        id: pack
+        shell: bash
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          OS_NAME: linux
+        run: |
+          TAG_NAME="${GITHUB_REF##*/}"
+          TARGET_DIR=releases/pipe-downloader-${TAG_NAME}
+
+          ls -la target
+          mkdir -p "$TARGET_DIR/pipe-downloader"
+          #strip "target/aarch64-unknown-linux-musl/release/ya-runtime-http-auth"
+          #strip "target/aarch64-unknown-linux-musl/release/ya-http-proxy"
+
+          set -x
+          cp target/aarch64-unknown-linux-musl/release/pipe-downloader "$TARGET_DIR/pipe-downloader/"
+          (cd releases && tar czvf "pipe-downloader-${OS_NAME}-${TAG_NAME}.tar.gz" "pipe-downloader-${OS_NAME}-${TAG_NAME}")
+
+          echo "::set-output name=artifact::pipe-downloader-${OS_NAME}-${TAG_NAME}.tar.gz"
+          echo "::set-output name=media::application/tar+gzip"
+
+      - name: Upload
+        uses: actions/upload-artifact@v3
+        with:
+          name: pipe_downloader
+          path: ./releases/${{ steps.pack.outputs.artifact }}
