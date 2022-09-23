@@ -7,7 +7,6 @@ use reqwest::StatusCode;
 use std::fs::File;
 use std::io::Read;
 
-
 use std::str::FromStr;
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
@@ -188,8 +187,6 @@ fn download_chunk(
     return Ok(buf_vec);
 }
 
-
-
 fn decode_loop<T: Read>(
     progress_context: Arc<Mutex<ProgressContext>>,
     decoder: &mut T,
@@ -230,15 +227,24 @@ fn decode_loop<T: Read>(
 
 impl PipeDownloader {
     pub fn signal_stop(self: &PipeDownloader) {
-        let mut pc = self.progress_context.lock().expect("Failed to lock progress context");
+        let mut pc = self
+            .progress_context
+            .lock()
+            .expect("Failed to lock progress context");
         pc.stop_requested = true;
     }
     pub fn pause_download(self: &PipeDownloader) {
-        let mut pc = self.progress_context.lock().expect("Failed to lock progress context");
+        let mut pc = self
+            .progress_context
+            .lock()
+            .expect("Failed to lock progress context");
         pc.paused = true;
     }
     pub fn resume_download(self: &PipeDownloader) {
-        let mut pc = self.progress_context.lock().expect("Failed to lock progress context");
+        let mut pc = self
+            .progress_context
+            .lock()
+            .expect("Failed to lock progress context");
         pc.paused = false;
     }
 
@@ -251,15 +257,19 @@ impl PipeDownloader {
     }
 
     pub fn get_progress(self: &PipeDownloader) -> anyhow::Result<ProgressContext> {
-        let pc = self.progress_context.lock().expect("Failed to lock progress context");
+        let pc = self
+            .progress_context
+            .lock()
+            .expect("Failed to lock progress context");
         let pc = pc.clone();
         return Ok(pc);
     }
-    fn download_loop() {
-
-    }
 
     pub fn start_download(self: &mut PipeDownloader) -> anyhow::Result<()> {
+        if self.download_started {
+            return Err(anyhow::anyhow!("Download already started"));
+        }
+        self.download_started = true;
         let url = self.url.clone();
         //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
 
@@ -273,7 +283,6 @@ impl PipeDownloader {
         let length = usize::from_str(length.to_str()?)
             .map_err(|_| "invalid Content-Length header")
             .unwrap();
-
 
         log::info!("starting download...");
         let (send_download_chunks, receive_download_chunks) = sync_channel(1);
@@ -295,9 +304,7 @@ impl PipeDownloader {
                 let client = reqwest::blocking::Client::new();
 
                 loop {
-                    let progress = {
-                        pc.lock().unwrap().clone()
-                    };
+                    let progress = { pc.lock().unwrap().clone() };
                     if progress.stop_requested {
                         break 'range_loop;
                     }
@@ -306,8 +313,7 @@ impl PipeDownloader {
                         thread::sleep(Duration::from_secs(5));
                         continue;
                     }
-                    match download_chunk(pc.clone(), &download_url, &client, &range)
-                    {
+                    match download_chunk(pc.clone(), &download_url, &client, &range) {
                         Ok(buf) => {
                             {
                                 let mut progress = pc.lock().unwrap();
@@ -337,7 +343,10 @@ impl PipeDownloader {
                             if progress.paused {
                                 log::info!("Download paused, trying again");
                             } else {
-                                log::warn!("Error while downloading chunk, trying again: {:?}", err);
+                                log::warn!(
+                                    "Error while downloading chunk, trying again: {:?}",
+                                    err
+                                );
                             }
                             thread::sleep(Duration::from_secs(5));
                         }
@@ -416,7 +425,7 @@ impl PipeDownloader {
 
         Ok(())
     }
-    pub fn wait_for_finish(self : &mut PipeDownloader) {
+    pub fn wait_for_finish(self: &mut PipeDownloader) {
         self.t1.take().unwrap().join().unwrap();
         self.t2.take().unwrap().join().unwrap();
     }

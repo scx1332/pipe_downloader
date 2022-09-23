@@ -1,15 +1,18 @@
 mod pipe_downloader;
 
+use anyhow;
 use std::thread;
 use std::time::Duration;
-use anyhow;
 
 use crate::pipe_downloader::{convert, PipeDownloader};
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let mut pd = PipeDownloader::new("http://mumbai-main.golem.network:14372/beacon.tar.lz4", "beacon");
+    let mut pd = PipeDownloader::new(
+        "http://mumbai-main.golem.network:14372/beacon.tar.lz4",
+        "beacon",
+    );
     pd.start_download()?;
     let current_time = std::time::Instant::now();
     loop {
