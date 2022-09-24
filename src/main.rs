@@ -51,13 +51,16 @@ fn main() -> anyhow::Result<()> {
         if pd.is_finished() {
             break;
         }
-        let elapsed = current_time.elapsed();
-        if elapsed.as_secs() > 30 {
-            pd.pause_download();
-            break;
-        }
-        thread::sleep(Duration::from_millis(100));
+
+        // test pause
+        // if elapsed.as_secs() > 30 {
+        //     pd.pause_download();
+        //     break;
+        // }
+        thread::sleep(Duration::from_millis(1000));
     }
+    let elapsed = current_time.elapsed();
     pd.wait_for_finish();
+    println!("Unpack finished in: {:?}", elapsed);
     Ok(())
 }
