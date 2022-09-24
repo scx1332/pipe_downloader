@@ -37,10 +37,12 @@ impl<R: Read> Lz4Decoder<R> {
     }
 
     /// Immutable reader reference.
+    #[allow(dead_code)]
     pub fn reader(&self) -> &R {
         &self.r
     }
 
+    #[allow(dead_code)]
     pub fn finish(self) -> (R, Result<()>) {
         (
             self.r,

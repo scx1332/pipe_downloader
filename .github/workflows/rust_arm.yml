@@ -41,30 +41,8 @@ jobs:
           command: build
           args: --release --target aarch64-unknown-linux-musl
 
-      - name: Pack
-        id: pack
-        shell: bash
-        env:
-          GITHUB_REF: ${{ github.ref }}
-          OS_NAME: linux
-        run: |
-          TAG_NAME="${GITHUB_REF##*/}"
-          TARGET_DIR=releases/pipe-downloader-${TAG_NAME}
-
-          ls -la target
-          mkdir -p "$TARGET_DIR/pipe-downloader"
-          #strip "target/aarch64-unknown-linux-musl/release/ya-runtime-http-auth"
-          #strip "target/aarch64-unknown-linux-musl/release/ya-http-proxy"
-
-          set -x
-          cp target/aarch64-unknown-linux-musl/release/pipe-downloader "$TARGET_DIR/pipe-downloader/"
-          (cd releases && tar czvf "pipe-downloader-${OS_NAME}-${TAG_NAME}.tar.gz" "pipe-downloader-${OS_NAME}-${TAG_NAME}")
-
-          echo "::set-output name=artifact::pipe-downloader-${OS_NAME}-${TAG_NAME}.tar.gz"
-          echo "::set-output name=media::application/tar+gzip"
-
       - name: Upload
         uses: actions/upload-artifact@v3
         with:
           name: pipe_downloader
-          path: ./releases/${{ steps.pack.outputs.artifact }}
+          path: ./target/aarch64-unknown-linux-musl/release/pipe-downloader
