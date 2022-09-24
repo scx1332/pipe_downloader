@@ -14,11 +14,10 @@ use std::thread;
 
 use std::time::Duration;
 use tar::Archive;
+use human_bytes::human_bytes;
+use crate::lz4_decoder::Lz4Decoder;
 
-const CHUNK_SIZE_DOWNLOADER: usize = 30 * 1000 * 1000;
-const CHUNK_SIZE_DECODER: usize = 10 * 1000 * 1000;
-
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ProgressContext {
     pub total_downloaded: usize,
     pub chunk_downloaded: usize,
@@ -27,9 +26,25 @@ pub struct ProgressContext {
     pub paused: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct PipeDownloaderOptions {
+    pub chunk_size_downloader: usize,
+    pub chunk_size_decoder: usize,
+}
+
+impl Default for PipeDownloaderOptions {
+    fn default() -> Self {
+        Self {
+            chunk_size_downloader: 30_000_000,
+            chunk_size_decoder: 10_000_000,
+        }
+    }
+}
+
 pub struct PipeDownloader {
     url: String,
     progress_context: Arc<Mutex<ProgressContext>>,
+    options: PipeDownloaderOptions,
     download_started: bool,
     target_path: String,
     t1: Option<thread::JoinHandle<()>>,
@@ -37,8 +52,9 @@ pub struct PipeDownloader {
     t3: Option<thread::JoinHandle<()>>,
 }
 
+
 impl PipeDownloader {
-    pub fn new(url: &str, target_path: &str) -> Self {
+    pub fn new(url: &str, target_path: &str, pipe_downloader_options: PipeDownloaderOptions) -> Self {
         Self {
             url: url.to_string(),
             progress_context: Arc::new(Mutex::new(ProgressContext {
@@ -53,6 +69,7 @@ impl PipeDownloader {
             t1: None,
             t2: None,
             t3: None,
+            options: pipe_downloader_options,
         }
     }
 }
@@ -66,22 +83,6 @@ struct Pipe {
     progress_message: String,
 }
 
-pub fn convert_bytes_to_human(bytes: usize) -> String {
-    let units = ["B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-    let delimiter = 1000_f64;
-    let num = bytes as f64;
-    let exponent = std::cmp::min(
-        (num.ln() / delimiter.ln()).floor() as i32,
-        (units.len() - 1) as i32,
-    );
-    let pretty_bytes = format!("{:.2}", num / delimiter.powi(exponent))
-        .parse::<f64>()
-        .unwrap()
-        * 1_f64;
-    let unit = units[exponent as usize];
-    format!("{} {}", pretty_bytes, unit)
-}
-
 impl Read for Pipe {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.pos > self.report_progress + 100000 {
@@ -89,7 +90,7 @@ impl Read for Pipe {
                 log::debug!(
                     "{}: {}",
                     self.progress_message,
-                    convert_bytes_to_human(self.pos)
+                    human_bytes(self.pos as f64)
                 );
             }
             self.report_progress = self.pos;
@@ -187,12 +188,13 @@ fn download_chunk(
 
 fn decode_loop<T: Read>(
     progress_context: Arc<Mutex<ProgressContext>>,
+    options: &PipeDownloaderOptions,
     decoder: &mut T,
     send: std::sync::mpsc::SyncSender<Vec<u8>>,
 ) -> anyhow::Result<()> {
     let mut unpacked_size = 0;
     loop {
-        let mut buf = vec![0u8; CHUNK_SIZE_DECODER];
+        let mut buf = vec![0u8; options.chunk_size_decoder];
         let bytes_read = match decoder.read(&mut buf) {
             Ok(bytes_read) => bytes_read,
             Err(err) => {
@@ -214,7 +216,7 @@ fn decode_loop<T: Read>(
 
         log::debug!(
             "Decode loop, Unpacked size: {}",
-            convert_bytes_to_human(unpacked_size)
+            human_bytes(unpacked_size as f64)
         );
         buf.resize(bytes_read, 0);
         send.send(buf)?;
@@ -292,8 +294,9 @@ impl PipeDownloader {
 
         let pc = self.progress_context.clone();
         let download_url = url.clone();
+        let options = self.options.clone();
         self.t1 = Some(thread::spawn(move || {
-            let chunk_size = CHUNK_SIZE_DOWNLOADER;
+            let chunk_size = options.chunk_size_downloader;
 
             'range_loop: for i in 0..(length / chunk_size + 1) {
                 let max_length = std::cmp::min(chunk_size, length - i * chunk_size);
@@ -371,13 +374,14 @@ impl PipeDownloader {
 
         let pc = self.progress_context.clone();
         let download_url = url.clone();
+        let options = self.options.clone();
         self.t2 = Some(thread::spawn(move || {
             if download_url.ends_with(".gz") {
                 let mut gz = GzDecoder::new(&mut p);
-                decode_loop(pc.clone(), &mut gz, send_unpack_chunks).unwrap();
+                decode_loop(pc.clone(), &options, &mut gz, send_unpack_chunks).unwrap();
             } else if download_url.ends_with(".lz4") {
-                let mut lz4 = lz4::Decoder::new(&mut p).unwrap();
-                decode_loop(pc.clone(), &mut lz4, send_unpack_chunks).unwrap();
+                let mut lz4 = Lz4Decoder::new(&mut p).unwrap();
+                decode_loop(pc.clone(), &options, &mut lz4, send_unpack_chunks).unwrap();
             } else {
                 panic!("Unknown file type");
             };
