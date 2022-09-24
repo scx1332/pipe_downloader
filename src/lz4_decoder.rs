@@ -3,7 +3,7 @@ use lz4::liblz4::*;
 use std::io::{Error, ErrorKind, Read, Result};
 use std::ptr;
 
-const BUFFER_SIZE: usize = 32 * 1024;
+const BUFFER_SIZE: usize = 32 * 1024 * 1024;
 
 #[derive(Debug)]
 struct DecoderContext {
