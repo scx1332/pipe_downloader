@@ -1,5 +1,5 @@
-use lz4::liblz4::*;
 use libc::size_t;
+use lz4::liblz4::*;
 use std::io::{Error, ErrorKind, Read, Result};
 use std::ptr;
 
@@ -116,15 +116,14 @@ impl Drop for DecoderContext {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     extern crate rand;
 
     use self::rand::rngs::StdRng;
     use self::rand::Rng;
-    use lz4::{Encoder, EncoderBuilder};
     use super::Lz4Decoder;
+    use lz4::{Encoder, EncoderBuilder};
     use std::io::{Cursor, Error, ErrorKind, Read, Result, Write};
 
     const BUFFER_SIZE: usize = 64 * 1024;

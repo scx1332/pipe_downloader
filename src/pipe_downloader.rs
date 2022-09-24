@@ -6,16 +6,17 @@ use reqwest::header::CONTENT_LENGTH;
 use reqwest::StatusCode;
 use std::fs::File;
 use std::io::Read;
+use std::path::PathBuf;
 
 use std::str::FromStr;
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use crate::lz4_decoder::Lz4Decoder;
+use human_bytes::human_bytes;
 use std::time::Duration;
 use tar::Archive;
-use human_bytes::human_bytes;
-use crate::lz4_decoder::Lz4Decoder;
 
 #[derive(Debug, Clone)]
 pub struct ProgressContext {
@@ -46,15 +47,18 @@ pub struct PipeDownloader {
     progress_context: Arc<Mutex<ProgressContext>>,
     options: PipeDownloaderOptions,
     download_started: bool,
-    target_path: String,
+    target_path: PathBuf,
     t1: Option<thread::JoinHandle<()>>,
     t2: Option<thread::JoinHandle<()>>,
     t3: Option<thread::JoinHandle<()>>,
 }
 
-
 impl PipeDownloader {
-    pub fn new(url: &str, target_path: &str, pipe_downloader_options: PipeDownloaderOptions) -> Self {
+    pub fn new(
+        url: &str,
+        target_path: &PathBuf,
+        pipe_downloader_options: PipeDownloaderOptions,
+    ) -> Self {
         Self {
             url: url.to_string(),
             progress_context: Arc::new(Mutex::new(ProgressContext {
@@ -65,7 +69,7 @@ impl PipeDownloader {
                 paused: false,
             })),
             download_started: false,
-            target_path: target_path.to_string(),
+            target_path: target_path.clone(),
             t1: None,
             t2: None,
             t3: None,
@@ -414,7 +418,7 @@ impl PipeDownloader {
             self.t3 = Some(thread::spawn(move || {
                 match std::io::copy(&mut p2, &mut output_file) {
                     Ok(_) => {
-                        log::info!("Successfully written file {}", target_path);
+                        log::info!("Successfully written file {:?}", target_path);
                     }
                     Err(err) => {
                         log::error!("Error while writing {:?}", err);
