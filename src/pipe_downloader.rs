@@ -60,6 +60,12 @@ impl ProgressHistory {
 
     pub fn add_current_progress(self: &mut Self, bytes: usize) {
         let current_time = std::time::Instant::now();
+        if let Some(last_entry) = self.progress_entries.last_mut() {
+            if current_time - last_entry.time < Duration::from_secs(1) {
+                last_entry.bytes += bytes;
+                return;
+            }
+        }
         self.progress_entries.push(ProgressHistoryEntry {
             time: current_time,
             bytes: bytes
