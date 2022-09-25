@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::lz4_decoder::Lz4Decoder;
-use crate::pipe_downloader::DownloadChunkResult::PartialHeaderNotSupported;
+
 use anyhow::anyhow;
 use human_bytes::human_bytes;
 use std::time::Duration;
