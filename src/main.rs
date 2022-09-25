@@ -44,9 +44,11 @@ fn main() -> anyhow::Result<()> {
     loop {
         let progress = pd.get_progress()?;
         println!(
-            "downloaded: {}, unpacked: {}",
+            "downloaded: {} [{}/s], unpacked: {} [{}/s]",
             human_bytes((progress.total_downloaded + progress.chunk_downloaded) as f64),
-            human_bytes(progress.total_unpacked as f64)
+            progress.get_download_speed_human(),
+            human_bytes(progress.total_unpacked as f64),
+            progress.get_unpack_speed_human(),
         );
         if pd.is_finished() {
             break;

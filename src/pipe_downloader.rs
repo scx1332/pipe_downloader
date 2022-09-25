@@ -20,11 +20,52 @@ use tar::Archive;
 
 #[derive(Debug, Clone)]
 pub struct ProgressContext {
+    pub start_time: std::time::Instant,
     pub total_downloaded: usize,
     pub chunk_downloaded: usize,
     pub total_unpacked: usize,
     pub stop_requested: bool,
     pub paused: bool,
+}
+
+impl Default for ProgressContext {
+    fn default() -> ProgressContext {
+        ProgressContext {
+            start_time: std::time::Instant::now(),
+            total_downloaded: 0,
+            chunk_downloaded: 0,
+            total_unpacked: 0,
+            stop_requested: false,
+            paused: false,
+        }
+    }
+}
+
+impl ProgressContext {
+    pub fn get_elapsed(&self) -> Duration {
+        self.start_time.elapsed()
+    }
+    pub fn get_download_speed(&self) -> f64 {
+        let elapsed = self.get_elapsed();
+        if elapsed.as_secs() == 0 {
+            return 0.0;
+        }
+        (self.total_downloaded + self.chunk_downloaded) as f64 / elapsed.as_secs() as f64
+    }
+    pub fn get_download_speed_human(&self) -> String {
+        human_bytes(self.get_download_speed())
+    }
+    pub fn get_unpack_speed(&self) -> f64 {
+        let elapsed = self.get_elapsed();
+        if elapsed.as_secs() == 0 {
+            return 0.0;
+        }
+        (self.total_unpacked) as f64 / elapsed.as_secs() as f64
+    }
+    pub fn get_unpack_speed_human(&self) -> String {
+        human_bytes(self.get_unpack_speed())
+    }
+
 }
 
 #[derive(Debug, Clone)]
@@ -61,13 +102,7 @@ impl PipeDownloader {
     ) -> Self {
         Self {
             url: url.to_string(),
-            progress_context: Arc::new(Mutex::new(ProgressContext {
-                total_downloaded: 0,
-                total_unpacked: 0,
-                chunk_downloaded: 0,
-                stop_requested: false,
-                paused: false,
-            })),
+            progress_context: Arc::new(Mutex::new(ProgressContext::default())),
             download_started: false,
             target_path: target_path.clone(),
             t1: None,
@@ -278,6 +313,7 @@ impl PipeDownloader {
         if self.download_started {
             return Err(anyhow::anyhow!("Download already started"));
         }
+        self.progress_context.lock().expect("Failed to obtain lock").start_time = std::time::Instant::now();
         self.download_started = true;
         let url = self.url.clone();
         //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
