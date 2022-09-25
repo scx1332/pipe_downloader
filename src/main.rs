@@ -46,10 +46,10 @@ fn main() -> anyhow::Result<()> {
         println!(
             "downloaded: {} speed[current: {}/s total: {}/s], unpacked: {} [current: {}/s total: {}/s]",
             human_bytes((progress.total_downloaded + progress.chunk_downloaded) as f64),
-            progress.progress_buckets_download.get_downloaded(),
+            progress.progress_buckets_download.get_speed(),
             progress.get_download_speed_human(),
             human_bytes(progress.total_unpacked as f64),
-            progress.progress_buckets_unpack.get_downloaded(),
+            progress.progress_buckets_unpack.get_speed(),
             progress.get_unpack_speed_human(),
         );
         if pd.is_finished() {
