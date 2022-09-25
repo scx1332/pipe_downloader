@@ -35,21 +35,22 @@ impl ProgressHistory {
         ProgressHistory {
             progress_entries: vec![],
             max_entries: 100,
-            keep_time: Duration::from_secs(30)
+            keep_time: Duration::from_secs(10)
         }
     }
 
     pub fn get_speed(&self) -> f64 {
         //log::warn!("First enty from {}", self.progress_entries.get(0).map(|entry| std::time::Instant::now() - entry.time).unwrap_or());
+        let current_time = std::time::Instant::now();
         let mut total: usize = 0;
         let mut last_time = std::time::Instant::now();
         //let now = std::time::Instant::now();
         for entry in self.progress_entries.iter().rev() {
             total += entry.bytes;
             last_time = entry.time;
-            //if now - entry.time > self.keep_time {
-             //   break;
-            //}
+            if current_time - entry.time > self.keep_time {
+                break;
+            }
         }
         let elapsed_secs = (std::time::Instant::now() - last_time).as_secs_f64();
         log::warn!("Progress entries count {}", self.progress_entries.len());
@@ -61,7 +62,7 @@ impl ProgressHistory {
     pub fn add_current_progress(self: &mut Self, bytes: usize) {
         let current_time = std::time::Instant::now();
         if let Some(last_entry) = self.progress_entries.last_mut() {
-            if current_time - last_entry.time < Duration::from_secs(1) {
+            if current_time - last_entry.time < self.keep_time / self.max_entries as u32 {
                 last_entry.bytes += bytes;
                 return;
             }
