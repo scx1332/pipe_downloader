@@ -43,7 +43,7 @@ impl ProgressHistory {
         //log::warn!("First enty from {}", self.progress_entries.get(0).map(|entry| std::time::Instant::now() - entry.time).unwrap_or());
         let mut total: usize = 0;
         let mut last_time = std::time::Instant::now();
-        let now = std::time::Instant::now();
+        //let now = std::time::Instant::now();
         for entry in self.progress_entries.iter().rev() {
             total += entry.bytes;
             last_time = entry.time;
@@ -340,6 +340,7 @@ fn decode_loop<T: Read>(
         {
             let mut progress = progress_context.lock().unwrap();
             progress.total_unpacked = unpacked_size;
+            progress.progress_buckets_unpack.add_current_progress(bytes_read);
             if progress.stop_requested {
                 break;
             }
