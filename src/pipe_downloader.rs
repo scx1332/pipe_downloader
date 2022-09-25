@@ -20,6 +20,41 @@ use std::time::Duration;
 use tar::Archive;
 
 #[derive(Debug, Clone)]
+pub struct ProgressHistoryEntry {
+    time: std::time::Instant,
+    bytes: usize
+}
+#[derive(Debug, Clone)]
+pub struct ProgressHistory {
+    progress_entries: Vec<ProgressHistoryEntry>,
+}
+impl ProgressHistory {
+    pub fn new() -> ProgressHistory {
+        ProgressHistory {
+            progress_entries: vec![],
+        }
+    }
+
+    pub fn get_downloaded(&self) -> usize {
+        let mut total: usize = 0;
+        for entry in self.progress_entries.iter().rev() {
+            total += entry.bytes;
+        }
+        total
+    }
+
+    pub fn add_current_progress(self: &mut Self, bytes: usize) {
+        let current_time = std::time::Instant::now();
+        self.progress_entries.push(ProgressHistoryEntry {
+            time: current_time,
+            bytes: bytes
+        });
+
+
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ProgressContext {
     pub start_time: std::time::Instant,
     pub total_downloaded: usize,
@@ -27,6 +62,8 @@ pub struct ProgressContext {
     pub total_unpacked: usize,
     pub stop_requested: bool,
     pub paused: bool,
+    pub progress_buckets_download: ProgressHistory,
+    pub progress_buckets_unpack: ProgressHistory,
 }
 
 impl Default for ProgressContext {
@@ -38,6 +75,8 @@ impl Default for ProgressContext {
             total_unpacked: 0,
             stop_requested: false,
             paused: false,
+            progress_buckets_download: ProgressHistory::new(),
+            progress_buckets_unpack: ProgressHistory::new(),
         }
     }
 }
@@ -213,6 +252,7 @@ fn download_chunk(
         {
             let mut progress_context = progress_context.lock().unwrap();
             progress_context.chunk_downloaded += n;
+            progress_context.progress_buckets_download.add_current_progress(n);
             if progress_context.paused {
                 return Err(anyhow::anyhow!("Download paused"));
             }
@@ -301,9 +341,13 @@ fn download_loop(
     let length =
         usize::from_str(length.to_str()?).map_err(|_| anyhow!("invalid Content-Length header"))?;
 
+    if length == 0 {
+        return Err(anyhow::anyhow!("Content-Length is 0, empty files not supported"));
+    }
+
     let chunk_size = options.chunk_size_downloader;
 
-    'range_loop: for i in 0..(length / chunk_size + 1) {
+    for i in 0..((length - 1) / chunk_size + 1) {
         let max_length = std::cmp::min(chunk_size, length - i * chunk_size);
         if max_length == 0 {
             break;
@@ -317,7 +361,7 @@ fn download_loop(
         loop {
             let progress = { progress_context.lock().unwrap().clone() };
             if progress.stop_requested {
-                break 'range_loop;
+                return Err(anyhow::anyhow!("Stop requested"));
             }
             if progress.paused {
                 log::info!("Download still paused...");
@@ -337,14 +381,12 @@ fn download_loop(
                         }
                         if let Err(err) = send_download_chunks.send(buf) {
                             log::error!("Error while sending chunk: {:?}", err);
-                            progress_context.lock().unwrap().stop_requested = true;
-                            return Err(anyhow::anyhow!("Stop requested"));
+                            return Err(anyhow::anyhow!("Error while sending chunk: {:?}", err));
                         }
                         break;
                     }
                     DownloadChunkResult::PartialHeaderNotSupported => {
                         log::error!("Partial header not supported");
-                        progress_context.lock().unwrap().stop_requested = true;
                         return Err(anyhow::anyhow!("Partial header not supported"));
                     }
                 },
@@ -355,7 +397,7 @@ fn download_loop(
                         progress.clone()
                     };
                     if progress.stop_requested {
-                        break 'range_loop;
+                        return Err(anyhow::anyhow!("Stop requested"));
                     }
                     if progress.paused {
                         log::info!("Download paused, trying again");
@@ -434,12 +476,14 @@ impl PipeDownloader {
         let download_url = url.clone();
         let options = self.options.clone();
         self.t1 = Some(thread::spawn(move || {
-            match download_loop(options, pc, send_download_chunks, download_url) {
+            match download_loop(options, pc.clone(), send_download_chunks, download_url) {
                 Ok(_) => {
                     log::info!("Download loop finished, finishing thread");
                 }
                 Err(err) => {
                     log::error!("Error in download loop: {:?}, finishing thread", err);
+                    //stop other threads as well
+                    pc.lock().unwrap().stop_requested = true;
                 }
             }
         }));
