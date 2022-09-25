@@ -27,11 +27,15 @@ pub struct ProgressHistoryEntry {
 #[derive(Debug, Clone)]
 pub struct ProgressHistory {
     progress_entries: Vec<ProgressHistoryEntry>,
+    max_entries: usize,
+    keep_time: Duration,
 }
 impl ProgressHistory {
     pub fn new() -> ProgressHistory {
         ProgressHistory {
             progress_entries: vec![],
+            max_entries: 100,
+            keep_time: Duration::from_secs(30)
         }
     }
 
@@ -50,6 +54,21 @@ impl ProgressHistory {
             bytes: bytes
         });
 
+        //this should be removed max one time
+        assert!(self.progress_entries.len() <= self.max_entries + 1);
+        while self.progress_entries.len() > self.max_entries {
+            //log::warn!("ProgressHistory: max_entries reached");
+            self.progress_entries.remove(0);
+        }
+
+        //remove old entries
+        while let Some(first) = self.progress_entries.first() {
+            if current_time.duration_since(first.time) > self.keep_time {
+                self.progress_entries.remove(0);
+            } else {
+                break;
+            }
+        }
 
     }
 }
