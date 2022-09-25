@@ -1,4 +1,3 @@
-use anyhow;
 use flate2::read::GzDecoder;
 use log;
 
@@ -9,11 +8,13 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use std::str::FromStr;
-use std::sync::mpsc::sync_channel;
+use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::lz4_decoder::Lz4Decoder;
+use crate::pipe_downloader::DownloadChunkResult::PartialHeaderNotSupported;
+use anyhow::anyhow;
 use human_bytes::human_bytes;
 use std::time::Duration;
 use tar::Archive;
@@ -65,7 +66,6 @@ impl ProgressContext {
     pub fn get_unpack_speed_human(&self) -> String {
         human_bytes(self.get_unpack_speed())
     }
-
 }
 
 #[derive(Debug, Clone)]
@@ -158,12 +158,17 @@ impl Read for Pipe {
     }
 }
 
+enum DownloadChunkResult {
+    Data(Vec<u8>),
+    PartialHeaderNotSupported,
+}
+
 fn download_chunk(
     progress_context: Arc<Mutex<ProgressContext>>,
     url: &str,
     client: &reqwest::blocking::Client,
     range: &std::ops::Range<usize>,
-) -> anyhow::Result<Vec<u8>> {
+) -> anyhow::Result<DownloadChunkResult> {
     log::debug!(
         "Downloading chunk: range {:?} / {}",
         range,
@@ -181,7 +186,11 @@ fn download_chunk(
         .to_str()?;
     let content_length = usize::from_str(content_length)?;
 
-    if !(status == StatusCode::OK || status == StatusCode::PARTIAL_CONTENT) {
+    if status == StatusCode::OK {
+        return Ok(DownloadChunkResult::PartialHeaderNotSupported);
+        //return Err(anyhow::anyhow!("Seems like server does not support partial content: {}", status));
+    }
+    if status != StatusCode::PARTIAL_CONTENT {
         return Err(anyhow::anyhow!("unexpected status code: {}", status));
     } else {
         log::info!("Chunk downloaded with status: {:?}", status);
@@ -189,11 +198,17 @@ fn download_chunk(
     let mut buf_vec: Vec<u8> = Vec::with_capacity(content_length);
 
     let mut buf = vec![0; 1024 * 1024];
+    let mut left_to_download: i64 = (range.end - range.start) as i64;
     loop {
-        let n = response.read(&mut buf)?;
+        let max_buf_size = std::cmp::min(buf.len(), left_to_download as usize);
+        if max_buf_size == 0 {
+            break;
+        }
+        let n = response.read(&mut buf[..max_buf_size])?;
         if n == 0 {
             break;
         }
+        left_to_download -= n as i64;
         buf_vec.extend_from_slice(&buf[..n]);
         {
             let mut progress_context = progress_context.lock().unwrap();
@@ -206,14 +221,21 @@ fn download_chunk(
             }
         }
     }
-    if buf_vec.len() != content_length {
+    if buf_vec.len() != range.end - range.start {
         return Err(anyhow::anyhow!(
             "unexpected content length: {}",
             buf_vec.len()
         ));
     }
 
-    assert_eq!(content_length, range.end - range.start);
+    if content_length != range.end - range.start {
+        return Err(anyhow::anyhow!(
+            "unexpected content length: {} vs {}",
+            content_length,
+            range.end - range.start
+        ));
+    }
+
     assert_eq!(buf_vec.len(), range.end - range.start);
 
     log::debug!(
@@ -222,7 +244,7 @@ fn download_chunk(
         range.end - range.start
     );
 
-    return Ok(buf_vec);
+    return Ok(DownloadChunkResult::Data(buf_vec));
 }
 
 fn decode_loop<T: Read>(
@@ -261,6 +283,90 @@ fn decode_loop<T: Read>(
         send.send(buf)?;
     }
     log::info!("Finishing decode loop");
+    Ok(())
+}
+
+fn download_loop(
+    options: PipeDownloaderOptions,
+    progress_context: Arc<Mutex<ProgressContext>>,
+    send_download_chunks: SyncSender<Vec<u8>>,
+    download_url: String,
+) -> anyhow::Result<()> {
+    let client = reqwest::blocking::Client::new();
+    let response = client.head(&download_url).send()?;
+    let length = response
+        .headers()
+        .get(CONTENT_LENGTH)
+        .ok_or(anyhow!("response doesn't include the content length"))?;
+    let length =
+        usize::from_str(length.to_str()?).map_err(|_| anyhow!("invalid Content-Length header"))?;
+
+    let chunk_size = options.chunk_size_downloader;
+
+    'range_loop: for i in 0..(length / chunk_size + 1) {
+        let max_length = std::cmp::min(chunk_size, length - i * chunk_size);
+        if max_length == 0 {
+            break;
+        }
+        let range = std::ops::Range {
+            start: i * chunk_size,
+            end: i * chunk_size + max_length,
+        };
+        let client = reqwest::blocking::Client::new();
+
+        loop {
+            let progress = { progress_context.lock().unwrap().clone() };
+            if progress.stop_requested {
+                break 'range_loop;
+            }
+            if progress.paused {
+                log::info!("Download still paused...");
+                thread::sleep(Duration::from_secs(5));
+                continue;
+            }
+            match download_chunk(progress_context.clone(), &download_url, &client, &range) {
+                Ok(buf) => match buf {
+                    DownloadChunkResult::Data(buf) => {
+                        {
+                            let mut progress = progress_context.lock().unwrap();
+                            progress.total_downloaded += progress.chunk_downloaded;
+                            progress.chunk_downloaded = 0;
+                            if progress.stop_requested {
+                                return Err(anyhow::anyhow!("Stop requested"));
+                            }
+                        }
+                        if let Err(err) = send_download_chunks.send(buf) {
+                            log::error!("Error while sending chunk: {:?}", err);
+                            progress_context.lock().unwrap().stop_requested = true;
+                            return Err(anyhow::anyhow!("Stop requested"));
+                        }
+                        break;
+                    }
+                    DownloadChunkResult::PartialHeaderNotSupported => {
+                        log::error!("Partial header not supported");
+                        progress_context.lock().unwrap().stop_requested = true;
+                        return Err(anyhow::anyhow!("Partial header not supported"));
+                    }
+                },
+                Err(err) => {
+                    let progress = {
+                        let mut progress = progress_context.lock().unwrap();
+                        progress.chunk_downloaded = 0;
+                        progress.clone()
+                    };
+                    if progress.stop_requested {
+                        break 'range_loop;
+                    }
+                    if progress.paused {
+                        log::info!("Download paused, trying again");
+                    } else {
+                        log::warn!("Error while downloading chunk, trying again: {:?}", err);
+                    }
+                    thread::sleep(Duration::from_secs(5));
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -313,21 +419,13 @@ impl PipeDownloader {
         if self.download_started {
             return Err(anyhow::anyhow!("Download already started"));
         }
-        self.progress_context.lock().expect("Failed to obtain lock").start_time = std::time::Instant::now();
+        self.progress_context
+            .lock()
+            .expect("Failed to obtain lock")
+            .start_time = std::time::Instant::now();
         self.download_started = true;
         let url = self.url.clone();
         //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
-
-        let client = reqwest::blocking::Client::new();
-        let response = client.head(&url).send()?;
-        let length = response
-            .headers()
-            .get(CONTENT_LENGTH)
-            .ok_or("response doesn't include the content length")
-            .unwrap();
-        let length = usize::from_str(length.to_str()?)
-            .map_err(|_| "invalid Content-Length header")
-            .unwrap();
 
         log::info!("starting download...");
         let (send_download_chunks, receive_download_chunks) = sync_channel(1);
@@ -336,70 +434,14 @@ impl PipeDownloader {
         let download_url = url.clone();
         let options = self.options.clone();
         self.t1 = Some(thread::spawn(move || {
-            let chunk_size = options.chunk_size_downloader;
-
-            'range_loop: for i in 0..(length / chunk_size + 1) {
-                let max_length = std::cmp::min(chunk_size, length - i * chunk_size);
-                if max_length == 0 {
-                    break;
+            match download_loop(options, pc, send_download_chunks, download_url) {
+                Ok(_) => {
+                    log::info!("Download loop finished, finishing thread");
                 }
-                let range = std::ops::Range {
-                    start: i * chunk_size,
-                    end: i * chunk_size + max_length,
-                };
-                let client = reqwest::blocking::Client::new();
-
-                loop {
-                    let progress = { pc.lock().unwrap().clone() };
-                    if progress.stop_requested {
-                        break 'range_loop;
-                    }
-                    if progress.paused {
-                        log::info!("Download still paused...");
-                        thread::sleep(Duration::from_secs(5));
-                        continue;
-                    }
-                    match download_chunk(pc.clone(), &download_url, &client, &range) {
-                        Ok(buf) => {
-                            {
-                                let mut progress = pc.lock().unwrap();
-                                progress.total_downloaded += progress.chunk_downloaded;
-                                progress.chunk_downloaded = 0;
-                                if progress.stop_requested {
-                                    break 'range_loop;
-                                }
-                            }
-                            if let Err(err) = send_download_chunks.send(buf) {
-                                log::error!("Error while sending chunk: {:?}", err);
-                                let mut progress = pc.lock().unwrap();
-                                progress.stop_requested = true;
-                                break 'range_loop;
-                            }
-                            break;
-                        }
-                        Err(err) => {
-                            let progress = {
-                                let mut progress = pc.lock().unwrap();
-                                progress.chunk_downloaded = 0;
-                                progress.clone()
-                            };
-                            if progress.stop_requested {
-                                break 'range_loop;
-                            }
-                            if progress.paused {
-                                log::info!("Download paused, trying again");
-                            } else {
-                                log::warn!(
-                                    "Error while downloading chunk, trying again: {:?}",
-                                    err
-                                );
-                            }
-                            thread::sleep(Duration::from_secs(5));
-                        }
-                    }
+                Err(err) => {
+                    log::error!("Error in download loop: {:?}, finishing thread", err);
                 }
             }
-            println!("Finishing thread 1");
         }));
         let mut p = Pipe {
             pos: 0,
