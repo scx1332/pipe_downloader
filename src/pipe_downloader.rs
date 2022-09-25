@@ -40,10 +40,20 @@ impl ProgressHistory {
     }
 
     pub fn get_downloaded(&self) -> usize {
+        //log::warn!("First enty from {}", self.progress_entries.get(0).map(|entry| std::time::Instant::now() - entry.time).unwrap_or());
         let mut total: usize = 0;
+        let mut last_time = std::time::Instant::now();
+        let now = std::time::Instant::now();
         for entry in self.progress_entries.iter().rev() {
             total += entry.bytes;
+            last_time = entry.time;
+            //if now - entry.time > self.keep_time {
+             //   break;
+            //}
         }
+        log::warn!("Progress entries count {}", self.progress_entries.len());
+        log::warn!("Last entry: {}", (std::time::Instant::now() - last_time).as_secs_f64());
+
         total
     }
 
