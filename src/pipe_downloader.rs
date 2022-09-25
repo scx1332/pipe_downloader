@@ -34,7 +34,7 @@ impl ProgressHistory {
     pub fn new() -> ProgressHistory {
         ProgressHistory {
             progress_entries: vec![],
-            max_entries: 100,
+            max_entries: 50,
             keep_time: Duration::from_secs(10)
         }
     }

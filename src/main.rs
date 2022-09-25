@@ -49,7 +49,7 @@ fn main() -> anyhow::Result<()> {
             human_bytes(progress.progress_buckets_download.get_speed()),
             progress.get_download_speed_human(),
             human_bytes(progress.total_unpacked as f64),
-            progress.progress_buckets_unpack.get_speed(),
+            human_bytes(progress.progress_buckets_unpack.get_speed()),
             progress.get_unpack_speed_human(),
         );
         if pd.is_finished() {
