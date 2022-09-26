@@ -15,15 +15,15 @@ use std::thread;
 use crate::lz4_decoder::Lz4Decoder;
 
 use anyhow::anyhow;
+use bzip2::read::BzDecoder;
 use human_bytes::human_bytes;
 use std::time::Duration;
-use bzip2::read::BzDecoder;
 use tar::Archive;
 
 #[derive(Debug, Clone)]
 pub struct ProgressHistoryEntry {
     time: std::time::Instant,
-    bytes: usize
+    bytes: usize,
 }
 #[derive(Debug, Clone)]
 pub struct ProgressHistory {
@@ -36,22 +36,22 @@ impl ProgressHistory {
         ProgressHistory {
             progress_entries: vec![],
             max_entries: 50,
-            keep_time: Duration::from_secs(10)
+            keep_time: Duration::from_secs(10),
         }
     }
 
     pub fn get_speed(&self) -> f64 {
         //log::warn!("First enty from {}", self.progress_entries.get(0).map(|entry| std::time::Instant::now() - entry.time).unwrap_or());
         let current_time = std::time::Instant::now();
+        let mut last_time = current_time - self.keep_time;
         let mut total: usize = 0;
-        let mut last_time = std::time::Instant::now();
         //let now = std::time::Instant::now();
         for entry in self.progress_entries.iter().rev() {
-            total += entry.bytes;
-            last_time = entry.time;
             if current_time - entry.time > self.keep_time {
                 break;
             }
+            total += entry.bytes;
+            last_time = entry.time;
         }
         let elapsed_secs = (std::time::Instant::now() - last_time).as_secs_f64();
         log::trace!("Progress entries count {}", self.progress_entries.len());
@@ -70,7 +70,7 @@ impl ProgressHistory {
         }
         self.progress_entries.push(ProgressHistoryEntry {
             time: current_time,
-            bytes: bytes
+            bytes: bytes,
         });
 
         //this should be removed max one time
@@ -88,7 +88,6 @@ impl ProgressHistory {
                 break;
             }
         }
-
     }
 }
 
@@ -273,7 +272,10 @@ fn download_chunk(
     if status != StatusCode::PARTIAL_CONTENT {
         return Err(anyhow::anyhow!("unexpected status code: {}", status));
     } else {
-        log::info!("Received status: {:?}, starting downloading chunk data...", status);
+        log::info!(
+            "Received status: {:?}, starting downloading chunk data...",
+            status
+        );
     }
     let mut buf_vec: Vec<u8> = Vec::with_capacity(content_length);
 
@@ -306,7 +308,8 @@ fn download_chunk(
         }
         //Speed throttling is not perfect by any means, but it's good enough for now
         if let Some(max_speed) = max_speed {
-            let should_take_time = Duration::from_secs_f64(total_downloaded as f64 / max_speed as f64);
+            let should_take_time =
+                Duration::from_secs_f64(total_downloaded as f64 / max_speed as f64);
             log::debug!("Should take time: {:?}", should_take_time);
             loop {
                 let elapsed = std::time::Instant::now().duration_since(start_time);
@@ -400,7 +403,9 @@ fn download_loop(
         usize::from_str(length.to_str()?).map_err(|_| anyhow!("invalid Content-Length header"))?;
 
     if length == 0 {
-        return Err(anyhow::anyhow!("Content-Length is 0, empty files not supported"));
+        return Err(anyhow::anyhow!(
+            "Content-Length is 0, empty files not supported"
+        ));
     }
 
     let chunk_size = options.chunk_size_downloader;
@@ -426,7 +431,13 @@ fn download_loop(
                 thread::sleep(Duration::from_secs(5));
                 continue;
             }
-            match download_chunk(progress_context.clone(), &download_url, &client, &range, options.max_download_speed) {
+            match download_chunk(
+                progress_context.clone(),
+                &download_url,
+                &client,
+                &range,
+                options.max_download_speed,
+            ) {
                 Ok(buf) => match buf {
                     DownloadChunkResult::Data(buf) => {
                         {
@@ -513,6 +524,11 @@ impl PipeDownloader {
             .expect("Failed to lock progress context");
         let pc = pc.clone();
         return Ok(pc);
+    }
+
+    #[allow(unused)]
+    pub fn is_started(self: &PipeDownloader) -> bool {
+        return self.download_started;
     }
 
     pub fn start_download(self: &mut PipeDownloader) -> anyhow::Result<()> {
