@@ -149,6 +149,7 @@ impl ProgressContext {
 pub struct PipeDownloaderOptions {
     pub chunk_size_downloader: usize,
     pub chunk_size_decoder: usize,
+    pub max_download_speed: Option<usize>,
 }
 
 impl Default for PipeDownloaderOptions {
@@ -156,6 +157,7 @@ impl Default for PipeDownloaderOptions {
         Self {
             chunk_size_downloader: 30_000_000,
             chunk_size_decoder: 10_000_000,
+            max_download_speed: None,
         }
     }
 }
@@ -245,6 +247,7 @@ fn download_chunk(
     url: &str,
     client: &reqwest::blocking::Client,
     range: &std::ops::Range<usize>,
+    max_speed: Option<usize>,
 ) -> anyhow::Result<DownloadChunkResult> {
     log::debug!(
         "Downloading chunk: range {:?} / {}",
@@ -270,14 +273,16 @@ fn download_chunk(
     if status != StatusCode::PARTIAL_CONTENT {
         return Err(anyhow::anyhow!("unexpected status code: {}", status));
     } else {
-        log::info!("Chunk downloaded with status: {:?}", status);
+        log::info!("Received status: {:?}, starting downloading chunk data...", status);
     }
     let mut buf_vec: Vec<u8> = Vec::with_capacity(content_length);
 
     let mut buf = vec![0; 1024 * 1024];
-    let mut left_to_download: i64 = (range.end - range.start) as i64;
+    let mut total_downloaded: usize = 0;
+    let start_time = std::time::Instant::now();
     loop {
-        let max_buf_size = std::cmp::min(buf.len(), left_to_download as usize);
+        let left_to_download = (range.end - range.start) - total_downloaded;
+        let max_buf_size = std::cmp::min(buf.len(), left_to_download);
         if max_buf_size == 0 {
             break;
         }
@@ -285,7 +290,8 @@ fn download_chunk(
         if n == 0 {
             break;
         }
-        left_to_download -= n as i64;
+        total_downloaded += n;
+
         buf_vec.extend_from_slice(&buf[..n]);
         {
             let mut progress_context = progress_context.lock().unwrap();
@@ -296,6 +302,19 @@ fn download_chunk(
             }
             if progress_context.stop_requested {
                 return Err(anyhow::anyhow!("Stop requested"));
+            }
+        }
+        //Speed throttling is not perfect by any means, but it's good enough for now
+        if let Some(max_speed) = max_speed {
+            let should_take_time = Duration::from_secs_f64(total_downloaded as f64 / max_speed as f64);
+            log::debug!("Should take time: {:?}", should_take_time);
+            loop {
+                let elapsed = std::time::Instant::now().duration_since(start_time);
+                if should_take_time > elapsed {
+                    std::thread::sleep(Duration::from_millis(1));
+                } else {
+                    break;
+                }
             }
         }
     }
@@ -407,7 +426,7 @@ fn download_loop(
                 thread::sleep(Duration::from_secs(5));
                 continue;
             }
-            match download_chunk(progress_context.clone(), &download_url, &client, &range) {
+            match download_chunk(progress_context.clone(), &download_url, &client, &range, options.max_download_speed) {
                 Ok(buf) => match buf {
                     DownloadChunkResult::Data(buf) => {
                         {

@@ -22,6 +22,10 @@ struct Opt {
     #[structopt(short = "o", long = "output-dir", parse(from_os_str))]
     output_dir: PathBuf,
 
+    /// Max bytes downloaded per seconde
+    #[structopt(long = "limit-speed")]
+    limit_speed: Option<usize>,
+
     /// Size of download buffer in bytes
     #[structopt(long = "download-buffer", default_value = "30000000")]
     download_buffer: usize,
@@ -38,6 +42,7 @@ fn main() -> anyhow::Result<()> {
     let mut options = PipeDownloaderOptions::default();
     options.chunk_size_decoder = opt.unpack_buffer;
     options.chunk_size_downloader = opt.download_buffer;
+    options.max_download_speed = opt.limit_speed;
     let mut pd = PipeDownloader::new(&opt.url, &opt.output_dir, options);
     pd.start_download()?;
     let current_time = std::time::Instant::now();
