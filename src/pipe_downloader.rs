@@ -17,6 +17,7 @@ use crate::lz4_decoder::Lz4Decoder;
 use anyhow::anyhow;
 use human_bytes::human_bytes;
 use std::time::Duration;
+use bzip2::read::BzDecoder;
 use tar::Archive;
 
 #[derive(Debug, Clone)]
@@ -53,13 +54,13 @@ impl ProgressHistory {
             }
         }
         let elapsed_secs = (std::time::Instant::now() - last_time).as_secs_f64();
-        log::warn!("Progress entries count {}", self.progress_entries.len());
-        log::warn!("Last entry: {}", elapsed_secs);
+        log::trace!("Progress entries count {}", self.progress_entries.len());
+        log::trace!("Last entry: {}", elapsed_secs);
 
         total as f64 / elapsed_secs
     }
 
-    pub fn add_current_progress(self: &mut Self, bytes: usize) {
+    pub fn add_bytes(self: &mut Self, bytes: usize) {
         let current_time = std::time::Instant::now();
         if let Some(last_entry) = self.progress_entries.last_mut() {
             if current_time - last_entry.time < self.keep_time / self.max_entries as u32 {
@@ -289,7 +290,7 @@ fn download_chunk(
         {
             let mut progress_context = progress_context.lock().unwrap();
             progress_context.chunk_downloaded += n;
-            progress_context.progress_buckets_download.add_current_progress(n);
+            progress_context.progress_buckets_download.add_bytes(n);
             if progress_context.paused {
                 return Err(anyhow::anyhow!("Download paused"));
             }
@@ -347,7 +348,7 @@ fn decode_loop<T: Read>(
         {
             let mut progress = progress_context.lock().unwrap();
             progress.total_unpacked = unpacked_size;
-            progress.progress_buckets_unpack.add_current_progress(bytes_read);
+            progress.progress_buckets_unpack.add_bytes(bytes_read);
             if progress.stop_requested {
                 break;
             }
@@ -546,6 +547,9 @@ impl PipeDownloader {
             } else if download_url.ends_with(".lz4") {
                 let mut lz4 = Lz4Decoder::new(&mut p).unwrap();
                 decode_loop(pc.clone(), &options, &mut lz4, send_unpack_chunks).unwrap();
+            } else if download_url.ends_with(".bz2") {
+                let mut bz2 = BzDecoder::new(&mut p);
+                decode_loop(pc.clone(), &options, &mut bz2, send_unpack_chunks).unwrap();
             } else {
                 panic!("Unknown file type");
             };
