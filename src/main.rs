@@ -1,5 +1,6 @@
 mod lz4_decoder;
 mod pipe_downloader;
+mod pipe_wrapper;
 
 use anyhow;
 use human_bytes::human_bytes;

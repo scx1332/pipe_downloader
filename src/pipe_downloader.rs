@@ -14,6 +14,7 @@ use std::thread;
 
 use crate::lz4_decoder::Lz4Decoder;
 
+use crate::pipe_wrapper::MpscReaderFromReceiver;
 use anyhow::anyhow;
 use bzip2::read::BzDecoder;
 use human_bytes::human_bytes;
@@ -101,6 +102,7 @@ pub struct ProgressContext {
     pub paused: bool,
     pub progress_buckets_download: ProgressHistory,
     pub progress_buckets_unpack: ProgressHistory,
+    pub finish_time: Option<std::time::Instant>,
 }
 
 impl Default for ProgressContext {
@@ -114,6 +116,7 @@ impl Default for ProgressContext {
             paused: false,
             progress_buckets_download: ProgressHistory::new(),
             progress_buckets_unpack: ProgressHistory::new(),
+            finish_time: None,
         }
     }
 }
@@ -188,51 +191,6 @@ impl PipeDownloader {
             t3: None,
             options: pipe_downloader_options,
         }
-    }
-}
-
-struct Pipe {
-    pos: usize,
-    receiver: std::sync::mpsc::Receiver<Vec<u8>>,
-    current_buf: Vec<u8>,
-    current_buf_pos: usize,
-    report_progress: usize,
-    progress_message: String,
-}
-
-impl Read for Pipe {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        if self.pos > self.report_progress + 100000 {
-            if !self.progress_message.is_empty() {
-                log::debug!(
-                    "{}: {}",
-                    self.progress_message,
-                    human_bytes(self.pos as f64)
-                );
-            }
-            self.report_progress = self.pos;
-        }
-        let starting_pos = self.pos;
-        if self.current_buf.is_empty() || self.current_buf_pos >= self.current_buf.len() {
-            let res = self.receiver.recv();
-            if res.is_err() {
-                return Ok(0);
-            }
-            self.current_buf = res.unwrap();
-            self.current_buf_pos = 0;
-        }
-        let min_val = std::cmp::min(self.current_buf.len() - self.current_buf_pos, buf.len());
-        for i in 0..min_val {
-            buf[i] = self.current_buf[self.current_buf_pos];
-            self.current_buf_pos += 1;
-            self.pos += 1;
-        }
-        log::debug!(
-            "Chunk read: starting_pos: {} / length: {}",
-            starting_pos,
-            self.pos - starting_pos
-        );
-        return Ok(min_val);
     }
 }
 
@@ -561,14 +519,7 @@ impl PipeDownloader {
                 }
             }
         }));
-        let mut p = Pipe {
-            pos: 0,
-            receiver: receive_download_chunks,
-            current_buf: vec![],
-            current_buf_pos: 0,
-            report_progress: 0,
-            progress_message: "Downloading".to_string(),
-        };
+        let mut p = MpscReaderFromReceiver::new(receive_download_chunks);
 
         let (send_unpack_chunks, receive_unpack_chunks) = sync_channel(1);
 
@@ -590,14 +541,7 @@ impl PipeDownloader {
             };
         }));
 
-        let mut p2 = Pipe {
-            pos: 0,
-            receiver: receive_unpack_chunks,
-            current_buf: vec![],
-            current_buf_pos: 0,
-            report_progress: 0,
-            progress_message: "Unpacking".to_string(),
-        };
+        let mut p2 = MpscReaderFromReceiver::new(receive_unpack_chunks);
 
         let target_path = self.target_path.clone();
         if url.contains(".tar.") {
