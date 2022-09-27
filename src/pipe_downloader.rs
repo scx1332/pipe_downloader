@@ -229,10 +229,11 @@ fn download_loop(
         .headers()
         .get(CONTENT_LENGTH)
         .ok_or(anyhow!("response doesn't include the content length"))?;
-    let length =
+    let total_length =
         usize::from_str(length.to_str()?).map_err(|_| anyhow!("invalid Content-Length header"))?;
 
-    if length == 0 {
+    progress_context.lock().unwrap().total_download_size = Some(total_length);
+    if total_length == 0 {
         return Err(anyhow::anyhow!(
             "Content-Length is 0, empty files not supported"
         ));
@@ -240,8 +241,8 @@ fn download_loop(
 
     let chunk_size = options.chunk_size_downloader;
 
-    for i in 0..((length - 1) / chunk_size + 1) {
-        let max_length = std::cmp::min(chunk_size, length - i * chunk_size);
+    for i in 0..((total_length - 1) / chunk_size + 1) {
+        let max_length = std::cmp::min(chunk_size, total_length - i * chunk_size);
         if max_length == 0 {
             break;
         }
