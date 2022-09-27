@@ -96,6 +96,8 @@ pub struct ProgressContext {
     pub progress_buckets_unpack: ProgressHistory,
     pub finish_time: Option<chrono::DateTime<chrono::Utc>>,
     pub error_time: Option<chrono::DateTime<chrono::Utc>>,
+    pub error_message_download: Option<String>,
+    pub error_message_unpack: Option<String>,
     pub error_message: Option<String>,
 }
 
@@ -115,6 +117,8 @@ impl Default for ProgressContext {
             finish_time: None,
             error_time: None,
             error_message: None,
+            error_message_download: None,
+            error_message_unpack: None,
         }
     }
 }
@@ -132,6 +136,8 @@ impl ProgressContext {
             "current_download_speed": self.progress_buckets_download.get_speed(),
             "current_unpack_speed": self.progress_buckets_unpack.get_speed(),
             "error_message": self.error_message,
+            "error_message_download": self.error_message_download,
+            "error_message_unpack": self.error_message_unpack,
             "total_unpack_size": self.total_unpack_size,
             "total_download_size": self.total_download_size,
         })

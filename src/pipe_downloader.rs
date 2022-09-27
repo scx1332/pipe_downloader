@@ -189,8 +189,11 @@ fn decode_loop<T: Read>(
         let bytes_read = match decoder.read(&mut buf) {
             Ok(bytes_read) => bytes_read,
             Err(err) => {
-                log::error!("Error while reading from lz4 decoder {:?}", err);
-                break;
+                log::error!("Error while reading from decoder {:?}", err);
+                return Err(anyhow::anyhow!(
+                    "Error while reading from decoder {:?}",
+                    err
+                ));
             }
         };
         if bytes_read == 0 {
@@ -408,6 +411,7 @@ impl PipeDownloader {
                     log::error!("Error in download loop: {:?}, finishing thread", err);
                     //stop other threads as well
                     pc.lock().unwrap().stop_requested = true;
+                    pc.lock().unwrap().error_message_download = Some(err.to_string());
                 }
             }
         });
@@ -419,18 +423,25 @@ impl PipeDownloader {
         let download_url = url.clone();
         let options = self.options.clone();
         let t2 = thread::spawn(move || {
-            if download_url.ends_with(".gz") {
+            let res = if download_url.ends_with(".gz") {
                 let mut gz = GzDecoder::new(&mut p);
-                decode_loop(pc.clone(), &options, &mut gz, send_unpack_chunks).unwrap();
+                decode_loop(pc.clone(), &options, &mut gz, send_unpack_chunks)
             } else if download_url.ends_with(".lz4") {
                 let mut lz4 = Lz4Decoder::new(&mut p).unwrap();
-                decode_loop(pc.clone(), &options, &mut lz4, send_unpack_chunks).unwrap();
+                decode_loop(pc.clone(), &options, &mut lz4, send_unpack_chunks)
             } else if download_url.ends_with(".bz2") {
                 let mut bz2 = BzDecoder::new(&mut p);
-                decode_loop(pc.clone(), &options, &mut bz2, send_unpack_chunks).unwrap();
+                decode_loop(pc.clone(), &options, &mut bz2, send_unpack_chunks)
             } else {
                 panic!("Unknown file type");
             };
+            if let Err(err) = res {
+                log::error!("Error in decode loop: {:?}, finishing thread", err);
+                //stop other threads as well
+                pc.lock().unwrap().stop_requested = true;
+                pc.lock().unwrap().error_message_unpack = Some(err.to_string());
+            };
+            log::info!("Decode loop finished, finishing thread");
         });
 
         let mut p2 = MpscReaderFromReceiver::new(receive_unpack_chunks);
