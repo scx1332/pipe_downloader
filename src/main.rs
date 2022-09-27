@@ -11,7 +11,6 @@ use std::time::Duration;
 
 use crate::pipe_downloader::{PipeDownloader, PipeDownloaderOptions};
 
-use crate::pipe_utils::bytes_to_human;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]

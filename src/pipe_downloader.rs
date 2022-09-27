@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use std::str::FromStr;
 use std::sync::mpsc::{sync_channel, SyncSender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
 use crate::lz4_decoder::Lz4Decoder;
@@ -347,27 +347,23 @@ impl PipeDownloader {
         }
     }
 
-    pub fn get_progress(self: &PipeDownloader) -> ProgressContext {
-        let pc = self
-            .progress_context
-            .lock()
-            .expect("Failed to lock progress context");
-        let pc = pc.clone();
-        return pc;
-    }
-
-    pub fn get_progress_json(self: &PipeDownloader) -> serde_json::Value {
+    fn get_progress_guard(self: &PipeDownloader) -> MutexGuard<ProgressContext> {
         self.progress_context
             .lock()
             .expect("Failed to lock progress context")
-            .to_json()
+    }
+
+    #[allow(unused)]
+    fn get_progress(self: &PipeDownloader) -> ProgressContext {
+        self.get_progress_guard().clone()
+    }
+
+    pub fn get_progress_json(self: &PipeDownloader) -> serde_json::Value {
+        self.get_progress_guard().to_json()
     }
 
     pub fn get_progress_human_line(self: &PipeDownloader) -> String {
-        let progress = self
-            .progress_context
-            .lock()
-            .expect("Failed to lock progress context");
+        let progress = self.get_progress_guard();
         format!(
             "Downloaded: {} [{}/s now: {}/s], Unpack: {} [{}/s now: {}/s]",
             bytes_to_human(progress.total_downloaded + progress.chunk_downloaded),
