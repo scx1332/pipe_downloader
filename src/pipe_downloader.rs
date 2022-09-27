@@ -28,6 +28,7 @@ pub struct PipeDownloaderOptions {
     pub chunk_size_downloader: usize,
     pub chunk_size_decoder: usize,
     pub max_download_speed: Option<usize>,
+    pub force_no_chunks: bool
 }
 
 impl Default for PipeDownloaderOptions {
@@ -36,6 +37,7 @@ impl Default for PipeDownloaderOptions {
             chunk_size_downloader: 30_000_000,
             chunk_size_decoder: 10_000_000,
             max_download_speed: None,
+            force_no_chunks: false
         }
     }
 }
@@ -73,41 +75,11 @@ enum DownloadChunkResult {
 
 fn download_chunk(
     progress_context: Arc<Mutex<ProgressContext>>,
-    url: &str,
-    client: &reqwest::blocking::Client,
     range: &std::ops::Range<usize>,
     max_speed: Option<usize>,
+    response: &mut reqwest::blocking::Response,
 ) -> anyhow::Result<DownloadChunkResult> {
-    log::debug!(
-        "Downloading chunk: range {:?} / {}",
-        range,
-        range.end - range.start
-    );
-
-    let header = format!("bytes={}-{}", range.start, range.end - 1);
-    let mut response = client.get(url).header("Range", header).send()?;
-
-    let status = response.status();
-    let content_length = response
-        .headers()
-        .get("Content-Length")
-        .ok_or(anyhow::anyhow!("Content-Length header not found"))?
-        .to_str()?;
-    let content_length = usize::from_str(content_length)?;
-
-    if status == StatusCode::OK {
-        return Ok(DownloadChunkResult::PartialHeaderNotSupported);
-        //return Err(anyhow::anyhow!("Seems like server does not support partial content: {}", status));
-    }
-    if status != StatusCode::PARTIAL_CONTENT {
-        return Err(anyhow::anyhow!("unexpected status code: {}", status));
-    } else {
-        log::info!(
-            "Received status: {:?}, starting downloading chunk data...",
-            status
-        );
-    }
-    let mut buf_vec: Vec<u8> = Vec::with_capacity(content_length);
+    let mut buf_vec: Vec<u8> = Vec::with_capacity(range.end - range.start);
 
     let mut buf = vec![0; 1024 * 1024];
     let mut total_downloaded: usize = 0;
@@ -120,7 +92,7 @@ fn download_chunk(
         }
         let n = response.read(&mut buf[..max_buf_size])?;
         if n == 0 {
-            break;
+            return Err(anyhow!("Unexpected end of file"));
         }
         total_downloaded += n;
 
@@ -158,16 +130,6 @@ fn download_chunk(
         ));
     }
 
-    if content_length != range.end - range.start {
-        return Err(anyhow::anyhow!(
-            "unexpected content length: {} vs {}",
-            content_length,
-            range.end - range.start
-        ));
-    }
-
-    assert_eq!(buf_vec.len(), range.end - range.start);
-
     log::debug!(
         "Chunk downloaded: range {:?} / {}",
         range,
@@ -175,6 +137,51 @@ fn download_chunk(
     );
 
     return Ok(DownloadChunkResult::Data(buf_vec));
+}
+
+fn request_chunk(
+    progress_context: Arc<Mutex<ProgressContext>>,
+    url: &str,
+    client: &reqwest::blocking::Client,
+    range: &std::ops::Range<usize>,
+    max_speed: Option<usize>,
+) -> anyhow::Result<DownloadChunkResult> {
+    log::debug!(
+        "Downloading chunk: range {:?} / {}",
+        range,
+        range.end - range.start
+    );
+
+    let header = format!("bytes={}-{}", range.start, range.end - 1);
+    let mut response = client.get(url).header("Range", header).send()?;
+
+    let status = response.status();
+    let content_length = response
+        .headers()
+        .get("Content-Length")
+        .ok_or(anyhow::anyhow!("Content-Length header not found"))?
+        .to_str()?;
+    let content_length = usize::from_str(content_length)?;
+
+    if status == StatusCode::OK {
+        return Ok(DownloadChunkResult::PartialHeaderNotSupported);
+        //return Err(anyhow::anyhow!("Seems like server does not support partial content: {}", status));
+    }
+    if status != StatusCode::PARTIAL_CONTENT {
+        return Err(anyhow::anyhow!("unexpected status code: {}", status));
+    } else {
+        log::info!(
+            "Received status: {:?}, starting downloading chunk data...",
+            status
+        );
+    }
+    if content_length != range.end - range.start {
+        return Err(anyhow::anyhow!(
+            "unexpected content length: {}",
+            content_length
+        ));
+    }
+    download_chunk(progress_context, range, max_speed, &mut response)
 }
 
 fn decode_loop<T: Read>(
@@ -226,8 +233,14 @@ fn download_loop(
     send_download_chunks: SyncSender<Vec<u8>>,
     download_url: String,
 ) -> anyhow::Result<()> {
+    let mut use_chunks = !options.force_no_chunks;
     let client = reqwest::blocking::Client::new();
-    let response = client.head(&download_url).send()?;
+
+    let response = if use_chunks {
+        client.head(&download_url).send()?
+    } else {
+        client.get(&download_url).send()?
+    };
     let length = response
         .headers()
         .get(CONTENT_LENGTH)
@@ -240,6 +253,20 @@ fn download_loop(
         return Err(anyhow::anyhow!(
             "Content-Length is 0, empty files not supported"
         ));
+    }
+
+    if total_length < 10000 {
+        log::info!("Single request mode");
+        use_chunks = false;
+    }
+    //check if server supports partial content
+    if use_chunks {
+        let header = format!("bytes={}-{}", 1000, 2000);
+        let response = client.head(&download_url).header("Range", header).send()?;
+        if response.status() != StatusCode::PARTIAL_CONTENT {
+            log::warn!("Server does not support partial content, falling back to single request. No retries after connection error will be possible");
+            use_chunks = false;
+        }
     }
 
     let chunk_size = options.chunk_size_downloader;
@@ -265,13 +292,24 @@ fn download_loop(
                 thread::sleep(Duration::from_secs(5));
                 continue;
             }
-            match download_chunk(
-                progress_context.clone(),
-                &download_url,
-                &client,
-                &range,
-                options.max_download_speed,
-            ) {
+            let result = if use_chunks {
+                request_chunk(
+                    progress_context.clone(),
+                    &download_url,
+                    &client,
+                    &range,
+                    options.max_download_speed,
+                )
+            } else {
+                let mut response = client.get(&download_url).send()?;
+                download_chunk(
+                    progress_context.clone(),
+                    &range,
+                    options.max_download_speed,
+                    &mut response,
+                )
+            };
+            match result {
                 Ok(buf) => match buf {
                     DownloadChunkResult::Data(buf) => {
                         {
@@ -301,6 +339,9 @@ fn download_loop(
                     };
                     if progress.stop_requested {
                         return Err(anyhow::anyhow!("Stop requested"));
+                    }
+                    if !use_chunks {
+                        return Err(anyhow::anyhow!("Error while downloading: {:?}", err));
                     }
                     if progress.paused {
                         log::info!("Download paused, trying again");
