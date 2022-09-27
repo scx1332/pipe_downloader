@@ -34,7 +34,7 @@ impl Read for MpscReaderFromReceiver {
         self.current_buf_pos += min_val;
         self.pos += min_val;
 
-        log::debug!(
+        log::trace!(
             "Chunk read: starting_pos: {} / length: {}",
             starting_pos,
             self.pos - starting_pos

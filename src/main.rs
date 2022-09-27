@@ -43,6 +43,10 @@ struct Opt {
     /// For debugging purposes
     #[structopt(long = "run-after-finish")]
     run_after_finish: bool,
+
+    /// For debugging purposes
+    #[structopt(long = "force-no-partial-content")]
+    force_no_partial_content: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -53,6 +57,7 @@ fn main() -> anyhow::Result<()> {
     options.chunk_size_decoder = opt.unpack_buffer;
     options.chunk_size_downloader = opt.download_buffer;
     options.max_download_speed = opt.limit_speed;
+    options.force_no_chunks = opt.force_no_partial_content;
     let mut pd = PipeDownloader::new(&opt.url, &opt.output_dir, options);
     pd.start_download()?;
     let current_time = std::time::Instant::now();

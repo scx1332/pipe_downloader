@@ -28,7 +28,7 @@ pub struct PipeDownloaderOptions {
     pub chunk_size_downloader: usize,
     pub chunk_size_decoder: usize,
     pub max_download_speed: Option<usize>,
-    pub force_no_chunks: bool
+    pub force_no_chunks: bool,
 }
 
 impl Default for PipeDownloaderOptions {
@@ -37,7 +37,7 @@ impl Default for PipeDownloaderOptions {
             chunk_size_downloader: 30_000_000,
             chunk_size_decoder: 10_000_000,
             max_download_speed: None,
-            force_no_chunks: false
+            force_no_chunks: false,
         }
     }
 }
@@ -236,11 +236,7 @@ fn download_loop(
     let mut use_chunks = !options.force_no_chunks;
     let client = reqwest::blocking::Client::new();
 
-    let response = if use_chunks {
-        client.head(&download_url).send()?
-    } else {
-        client.get(&download_url).send()?
-    };
+    let mut response = client.head(&download_url).send()?;
     let length = response
         .headers()
         .get(CONTENT_LENGTH)
@@ -267,6 +263,9 @@ fn download_loop(
             log::warn!("Server does not support partial content, falling back to single request. No retries after connection error will be possible");
             use_chunks = false;
         }
+    }
+    if !use_chunks {
+        response = client.get(&download_url).send()?;
     }
 
     let chunk_size = options.chunk_size_downloader;
@@ -301,7 +300,6 @@ fn download_loop(
                     options.max_download_speed,
                 )
             } else {
-                let mut response = client.get(&download_url).send()?;
                 download_chunk(
                     progress_context.clone(),
                     &range,
