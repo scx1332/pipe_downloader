@@ -1,0 +1,156 @@
+use std::ops::Div;
+use crate::pipe_utils::bytes_to_human;
+use serde::{Serialize};
+use chrono::{Duration, Utc};
+
+#[derive(Debug, Clone)]
+pub struct ProgressHistoryEntry {
+    time: chrono::DateTime<Utc>,
+    bytes: usize,
+}
+#[derive(Debug, Clone)]
+pub struct ProgressHistory {
+    progress_entries: Vec<ProgressHistoryEntry>,
+    max_entries: usize,
+    keep_time: Duration,
+}
+impl Default for ProgressHistory {
+    fn default() -> Self {
+        Self {
+            progress_entries: Vec::new(),
+            max_entries: 10,
+            keep_time: Duration::seconds(1),
+        }
+    }
+}
+impl ProgressHistory {
+    pub fn new() -> ProgressHistory {
+        ProgressHistory {
+            progress_entries: vec![],
+            max_entries: 50,
+            keep_time: Duration::seconds(10),
+        }
+    }
+
+    pub fn get_speed(&self) -> usize {
+        //log::warn!("First enty from {}", self.progress_entries.get(0).map(|entry| std::time::Instant::now() - entry.time).unwrap_or());
+        let current_time = chrono::Utc::now();
+        let mut last_time = current_time - self.keep_time;
+        let mut total: usize = 0;
+        //let now = std::time::Instant::now();
+        for entry in self.progress_entries.iter().rev() {
+            if current_time - entry.time > self.keep_time {
+                break;
+            }
+            total += entry.bytes;
+            last_time = entry.time;
+        }
+        let elapsed_secs = (chrono::Utc::now() - last_time).num_milliseconds() as f64 / 1000.0;
+        log::trace!("Progress entries count {}", self.progress_entries.len());
+        log::trace!("Last entry: {}", elapsed_secs);
+
+        (total as f64 / elapsed_secs).round() as usize
+    }
+
+    pub fn add_bytes(self: &mut Self, bytes: usize) {
+        let current_time = chrono::Utc::now();
+        if let Some(last_entry) = self.progress_entries.last_mut() {
+            if current_time - last_entry.time < self.keep_time.div(self.max_entries as i32) {
+                last_entry.bytes += bytes;
+                return;
+            }
+        }
+        self.progress_entries.push(ProgressHistoryEntry {
+            time: current_time,
+            bytes: bytes,
+        });
+
+        //this should be removed max one time
+        assert!(self.progress_entries.len() <= self.max_entries + 1);
+        while self.progress_entries.len() > self.max_entries {
+            //log::warn!("ProgressHistory: max_entries reached");
+            self.progress_entries.remove(0);
+        }
+
+        //remove old entries
+        while let Some(first) = self.progress_entries.first() {
+            if current_time - first.time > self.keep_time {
+                self.progress_entries.remove(0);
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProgressContext {
+    pub start_time: chrono::DateTime<chrono::Utc>,
+    pub total_downloaded: usize,
+    pub chunk_downloaded: usize,
+    pub total_unpacked: usize,
+    pub stop_requested: bool,
+    pub paused: bool,
+    #[serde(skip)]
+    pub progress_buckets_download: ProgressHistory,
+    #[serde(skip)]
+    pub progress_buckets_unpack: ProgressHistory,
+    pub finish_time: Option<chrono::DateTime<chrono::Utc>>,
+    pub error_time: Option<chrono::DateTime<chrono::Utc>>,
+    pub error_message: Option<String>,
+}
+
+impl Default for ProgressContext {
+    fn default() -> ProgressContext {
+        ProgressContext {
+            start_time: chrono::Utc::now(),
+            total_downloaded: 0,
+            chunk_downloaded: 0,
+            total_unpacked: 0,
+            stop_requested: false,
+            paused: false,
+            progress_buckets_download: ProgressHistory::new(),
+            progress_buckets_unpack: ProgressHistory::new(),
+            finish_time: None,
+            error_time: None,
+            error_message: None,
+        }
+    }
+}
+
+impl ProgressContext {
+    pub fn get_elapsed(&self) -> chrono::Duration {
+        chrono::Utc::now() - self.start_time
+    }
+    pub fn get_download_speed(&self) -> usize {
+        if self.finish_time.is_some() {
+            return 0;
+        }
+        let elapsed = self.get_elapsed();
+        if elapsed.num_milliseconds() == 0 {
+            return 0;
+        }
+        let res_f64 =
+            (self.total_downloaded + self.chunk_downloaded) as f64 / (elapsed.num_milliseconds() as f64 / 1000.0);
+        res_f64.round() as usize
+    }
+    pub fn get_download_speed_human(&self) -> String {
+        bytes_to_human(self.get_download_speed())
+    }
+    pub fn get_unpack_speed(&self) -> usize {
+        if self.finish_time.is_some() {
+            return 0;
+        }
+        let elapsed = self.get_elapsed();
+        if elapsed.num_milliseconds() == 0 {
+            return 0;
+        }
+        let speed_f64 = (self.total_unpacked) as f64 / (elapsed.num_milliseconds() as f64 / 1000.0);
+        speed_f64.round() as usize
+    }
+    pub fn get_unpack_speed_human(&self) -> String {
+        bytes_to_human(self.get_unpack_speed())
+    }
+}

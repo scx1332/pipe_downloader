@@ -1,15 +1,17 @@
 mod lz4_decoder;
 mod pipe_downloader;
+mod pipe_progress;
+mod pipe_utils;
 mod pipe_wrapper;
 
 use anyhow;
-use human_bytes::human_bytes;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
 use crate::pipe_downloader::{PipeDownloader, PipeDownloaderOptions};
 
+use crate::pipe_utils::bytes_to_human;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -34,6 +36,14 @@ struct Opt {
     /// Size of unpack buffer in bytes
     #[structopt(long = "unpack-buffer", default_value = "10000000")]
     unpack_buffer: usize,
+
+    /// Set output in json format
+    #[structopt(long = "json-output")]
+    json_output: bool,
+
+    /// For debugging purposes
+    #[structopt(long = "run-after-finish")]
+    run_after_finish: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -49,28 +59,31 @@ fn main() -> anyhow::Result<()> {
     let current_time = std::time::Instant::now();
     loop {
         let progress = pd.get_progress()?;
-        println!(
-            "downloaded: {} speed[current: {}/s total: {}/s], unpacked: {} [current: {}/s total: {}/s]",
-            human_bytes((progress.total_downloaded + progress.chunk_downloaded) as f64),
-            human_bytes(progress.progress_buckets_download.get_speed()),
-            progress.get_download_speed_human(),
-            human_bytes(progress.total_unpacked as f64),
-            human_bytes(progress.progress_buckets_unpack.get_speed()),
-            progress.get_unpack_speed_human(),
-        );
-        if pd.is_finished() {
+        if opt.json_output {
+            println!("{}", serde_json::to_string_pretty(&progress ).unwrap());
+        } else {
+            println!(
+                "downloaded: {} speed[current: {}/s total: {}/s], unpacked: {} [current: {}/s total: {}/s]",
+                bytes_to_human(progress.total_downloaded + progress.chunk_downloaded),
+                bytes_to_human(progress.progress_buckets_download.get_speed()),
+                progress.get_download_speed_human(),
+                bytes_to_human(progress.total_unpacked),
+                bytes_to_human(progress.progress_buckets_unpack.get_speed()),
+                progress.get_unpack_speed_human(),
+            );
+        }
+        if !opt.run_after_finish && pd.is_finished() {
             break;
         }
-
         // test pause
         // if elapsed.as_secs() > 30 {
         //     pd.pause_download();
         //     break;
         // }
+
         thread::sleep(Duration::from_millis(1000));
     }
     let elapsed = current_time.elapsed();
-    pd.wait_for_finish();
     println!("Unpack finished in: {:?}", elapsed);
     Ok(())
 }

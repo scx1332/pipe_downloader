@@ -14,138 +14,14 @@ use std::thread;
 
 use crate::lz4_decoder::Lz4Decoder;
 
-use crate::pipe_wrapper::MpscReaderFromReceiver;
 use anyhow::anyhow;
 use bzip2::read::BzDecoder;
-use human_bytes::human_bytes;
 use std::time::Duration;
 use tar::Archive;
 
-#[derive(Debug, Clone)]
-pub struct ProgressHistoryEntry {
-    time: std::time::Instant,
-    bytes: usize,
-}
-#[derive(Debug, Clone)]
-pub struct ProgressHistory {
-    progress_entries: Vec<ProgressHistoryEntry>,
-    max_entries: usize,
-    keep_time: Duration,
-}
-impl ProgressHistory {
-    pub fn new() -> ProgressHistory {
-        ProgressHistory {
-            progress_entries: vec![],
-            max_entries: 50,
-            keep_time: Duration::from_secs(10),
-        }
-    }
-
-    pub fn get_speed(&self) -> f64 {
-        //log::warn!("First enty from {}", self.progress_entries.get(0).map(|entry| std::time::Instant::now() - entry.time).unwrap_or());
-        let current_time = std::time::Instant::now();
-        let mut last_time = current_time - self.keep_time;
-        let mut total: usize = 0;
-        //let now = std::time::Instant::now();
-        for entry in self.progress_entries.iter().rev() {
-            if current_time - entry.time > self.keep_time {
-                break;
-            }
-            total += entry.bytes;
-            last_time = entry.time;
-        }
-        let elapsed_secs = (std::time::Instant::now() - last_time).as_secs_f64();
-        log::trace!("Progress entries count {}", self.progress_entries.len());
-        log::trace!("Last entry: {}", elapsed_secs);
-
-        total as f64 / elapsed_secs
-    }
-
-    pub fn add_bytes(self: &mut Self, bytes: usize) {
-        let current_time = std::time::Instant::now();
-        if let Some(last_entry) = self.progress_entries.last_mut() {
-            if current_time - last_entry.time < self.keep_time / self.max_entries as u32 {
-                last_entry.bytes += bytes;
-                return;
-            }
-        }
-        self.progress_entries.push(ProgressHistoryEntry {
-            time: current_time,
-            bytes: bytes,
-        });
-
-        //this should be removed max one time
-        assert!(self.progress_entries.len() <= self.max_entries + 1);
-        while self.progress_entries.len() > self.max_entries {
-            //log::warn!("ProgressHistory: max_entries reached");
-            self.progress_entries.remove(0);
-        }
-
-        //remove old entries
-        while let Some(first) = self.progress_entries.first() {
-            if current_time.duration_since(first.time) > self.keep_time {
-                self.progress_entries.remove(0);
-            } else {
-                break;
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ProgressContext {
-    pub start_time: std::time::Instant,
-    pub total_downloaded: usize,
-    pub chunk_downloaded: usize,
-    pub total_unpacked: usize,
-    pub stop_requested: bool,
-    pub paused: bool,
-    pub progress_buckets_download: ProgressHistory,
-    pub progress_buckets_unpack: ProgressHistory,
-    pub finish_time: Option<std::time::Instant>,
-}
-
-impl Default for ProgressContext {
-    fn default() -> ProgressContext {
-        ProgressContext {
-            start_time: std::time::Instant::now(),
-            total_downloaded: 0,
-            chunk_downloaded: 0,
-            total_unpacked: 0,
-            stop_requested: false,
-            paused: false,
-            progress_buckets_download: ProgressHistory::new(),
-            progress_buckets_unpack: ProgressHistory::new(),
-            finish_time: None,
-        }
-    }
-}
-
-impl ProgressContext {
-    pub fn get_elapsed(&self) -> Duration {
-        self.start_time.elapsed()
-    }
-    pub fn get_download_speed(&self) -> f64 {
-        let elapsed = self.get_elapsed();
-        if elapsed.as_secs() == 0 {
-            return 0.0;
-        }
-        (self.total_downloaded + self.chunk_downloaded) as f64 / elapsed.as_secs() as f64
-    }
-    pub fn get_download_speed_human(&self) -> String {
-        human_bytes(self.get_download_speed())
-    }
-    pub fn get_unpack_speed(&self) -> f64 {
-        let elapsed = self.get_elapsed();
-        if elapsed.as_secs() == 0 {
-            return 0.0;
-        }
-        (self.total_unpacked) as f64 / elapsed.as_secs() as f64
-    }
-    pub fn get_unpack_speed_human(&self) -> String {
-        human_bytes(self.get_unpack_speed())
-    }
-}
+use crate::pipe_progress::ProgressContext;
+use crate::pipe_utils::bytes_to_human;
+use crate::pipe_wrapper::MpscReaderFromReceiver;
 
 #[derive(Debug, Clone)]
 pub struct PipeDownloaderOptions {
@@ -170,9 +46,7 @@ pub struct PipeDownloader {
     options: PipeDownloaderOptions,
     download_started: bool,
     target_path: PathBuf,
-    t1: Option<thread::JoinHandle<()>>,
-    t2: Option<thread::JoinHandle<()>>,
-    t3: Option<thread::JoinHandle<()>>,
+    thread_last_stage: Option<thread::JoinHandle<()>>,
 }
 
 impl PipeDownloader {
@@ -186,9 +60,7 @@ impl PipeDownloader {
             progress_context: Arc::new(Mutex::new(ProgressContext::default())),
             download_started: false,
             target_path: target_path.clone(),
-            t1: None,
-            t2: None,
-            t3: None,
+            thread_last_stage: None,
             options: pipe_downloader_options,
         }
     }
@@ -336,7 +208,7 @@ fn decode_loop<T: Read>(
 
         log::debug!(
             "Decode loop, Unpacked size: {}",
-            human_bytes(unpacked_size as f64)
+            bytes_to_human(unpacked_size)
         );
         buf.resize(bytes_read, 0);
         send.send(buf)?;
@@ -468,8 +340,8 @@ impl PipeDownloader {
     }
 
     pub fn is_finished(self: &PipeDownloader) -> bool {
-        if let Some(t3) = self.t3.as_ref() {
-            t3.is_finished()
+        if let Some(thread_last_stage) = self.thread_last_stage.as_ref() {
+            thread_last_stage.is_finished()
         } else {
             false
         }
@@ -496,7 +368,7 @@ impl PipeDownloader {
         self.progress_context
             .lock()
             .expect("Failed to obtain lock")
-            .start_time = std::time::Instant::now();
+            .start_time = chrono::Utc::now();
         self.download_started = true;
         let url = self.url.clone();
         //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
@@ -507,7 +379,7 @@ impl PipeDownloader {
         let pc = self.progress_context.clone();
         let download_url = url.clone();
         let options = self.options.clone();
-        self.t1 = Some(thread::spawn(move || {
+        let t1 = thread::spawn(move || {
             match download_loop(options, pc.clone(), send_download_chunks, download_url) {
                 Ok(_) => {
                     log::info!("Download loop finished, finishing thread");
@@ -518,7 +390,7 @@ impl PipeDownloader {
                     pc.lock().unwrap().stop_requested = true;
                 }
             }
-        }));
+        });
         let mut p = MpscReaderFromReceiver::new(receive_download_chunks);
 
         let (send_unpack_chunks, receive_unpack_chunks) = sync_channel(1);
@@ -526,7 +398,7 @@ impl PipeDownloader {
         let pc = self.progress_context.clone();
         let download_url = url.clone();
         let options = self.options.clone();
-        self.t2 = Some(thread::spawn(move || {
+        let t2 = thread::spawn(move || {
             if download_url.ends_with(".gz") {
                 let mut gz = GzDecoder::new(&mut p);
                 decode_loop(pc.clone(), &options, &mut gz, send_unpack_chunks).unwrap();
@@ -539,41 +411,57 @@ impl PipeDownloader {
             } else {
                 panic!("Unknown file type");
             };
-        }));
+        });
 
         let mut p2 = MpscReaderFromReceiver::new(receive_unpack_chunks);
 
         let target_path = self.target_path.clone();
-        if url.contains(".tar.") {
-            self.t3 = Some(thread::spawn(move || {
+        let url = url.clone();
+
+        let pc = self.progress_context.clone();
+        self.thread_last_stage = Some(thread::spawn(move || {
+            let res = if url.contains(".tar.") {
                 let mut archive = Archive::new(p2);
                 match archive.unpack(target_path) {
                     Ok(_) => {
-                        log::info!("Successfully unpacked")
+                        log::info!("Successfully unpacked");
+                        Ok(())
                     }
                     Err(err) => {
                         log::error!("Error while unpacking {:?}", err);
+                        Err(err)
                     }
                 }
-            }));
-        } else {
-            let mut output_file = File::create(&target_path)?;
-            self.t3 = Some(thread::spawn(move || {
+            } else {
+                let mut output_file = File::create(&target_path).unwrap();
                 match std::io::copy(&mut p2, &mut output_file) {
                     Ok(_) => {
                         log::info!("Successfully written file {:?}", target_path);
+                        Ok(())
                     }
                     Err(err) => {
                         log::error!("Error while writing {:?}", err);
+                        Err(err)
                     }
-                };
-            }));
-        }
+                }
+            };
+            match res {
+                Ok(_) => {
+                    pc.lock().unwrap().stop_requested = true;
+                    t1.join().unwrap();
+                    t2.join().unwrap();
+                    pc.lock().unwrap().finish_time = Some(chrono::Utc::now());
+                }
+                Err(err) => {
+                    pc.lock().unwrap().error_message = Some(format!("{:?}", err));
+                    pc.lock().unwrap().stop_requested = true;
+                    t1.join().unwrap();
+                    t2.join().unwrap();
+                    pc.lock().unwrap().error_time = Some(chrono::Utc::now());
+                }
+            }
+        }));
 
         Ok(())
-    }
-    pub fn wait_for_finish(self: &mut PipeDownloader) {
-        self.t1.take().unwrap().join().unwrap();
-        self.t2.take().unwrap().join().unwrap();
     }
 }
