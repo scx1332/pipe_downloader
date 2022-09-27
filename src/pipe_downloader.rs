@@ -347,13 +347,36 @@ impl PipeDownloader {
         }
     }
 
-    pub fn get_progress(self: &PipeDownloader) -> anyhow::Result<ProgressContext> {
+    pub fn get_progress(self: &PipeDownloader) -> ProgressContext {
         let pc = self
             .progress_context
             .lock()
             .expect("Failed to lock progress context");
         let pc = pc.clone();
-        return Ok(pc);
+        return pc;
+    }
+
+    pub fn get_progress_json(self: &PipeDownloader) -> serde_json::Value {
+        self.progress_context
+            .lock()
+            .expect("Failed to lock progress context")
+            .to_json()
+    }
+
+    pub fn get_progress_human_line(self: &PipeDownloader) -> String {
+        let progress = self
+            .progress_context
+            .lock()
+            .expect("Failed to lock progress context");
+        format!(
+            "Downloaded: {} [{}/s now: {}/s], Unpack: {} [{}/s now: {}/s]",
+            bytes_to_human(progress.total_downloaded + progress.chunk_downloaded),
+            bytes_to_human(progress.progress_buckets_download.get_speed()),
+            bytes_to_human(progress.get_download_speed()),
+            bytes_to_human(progress.total_unpacked),
+            bytes_to_human(progress.progress_buckets_unpack.get_speed()),
+            bytes_to_human(progress.get_unpack_speed()),
+        )
     }
 
     #[allow(unused)]

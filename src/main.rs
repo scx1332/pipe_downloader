@@ -58,19 +58,13 @@ fn main() -> anyhow::Result<()> {
     pd.start_download()?;
     let current_time = std::time::Instant::now();
     loop {
-        let progress = pd.get_progress()?;
         if opt.json_output {
-            println!("{}", serde_json::to_string_pretty(&progress ).unwrap());
-        } else {
             println!(
-                "downloaded: {} speed[current: {}/s total: {}/s], unpacked: {} [current: {}/s total: {}/s]",
-                bytes_to_human(progress.total_downloaded + progress.chunk_downloaded),
-                bytes_to_human(progress.progress_buckets_download.get_speed()),
-                progress.get_download_speed_human(),
-                bytes_to_human(progress.total_unpacked),
-                bytes_to_human(progress.progress_buckets_unpack.get_speed()),
-                progress.get_unpack_speed_human(),
-            );
+                "{}",
+                serde_json::to_string_pretty(&pd.get_progress_json()).unwrap()
+            )
+        } else {
+            println!("{}", pd.get_progress_human_line());
         }
         if !opt.run_after_finish && pd.is_finished() {
             break;
