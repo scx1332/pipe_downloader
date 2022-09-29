@@ -397,7 +397,7 @@ impl PipeDownloader {
     }
 
     #[allow(unused)]
-    fn get_progress(self: &PipeDownloader) -> ProgressContext {
+    pub fn get_progress(self: &PipeDownloader) -> ProgressContext {
         self.get_progress_guard().clone()
     }
 
@@ -410,11 +410,11 @@ impl PipeDownloader {
         format!(
             "Downloaded: {} [{}/s now: {}/s], Unpack: {} [{}/s now: {}/s]",
             bytes_to_human(progress.total_downloaded + progress.chunk_downloaded),
-            bytes_to_human(progress.progress_buckets_download.get_speed()),
             bytes_to_human(progress.get_download_speed()),
+            bytes_to_human(progress.progress_buckets_download.get_speed()),
             bytes_to_human(progress.total_unpacked),
-            bytes_to_human(progress.progress_buckets_unpack.get_speed()),
             bytes_to_human(progress.get_unpack_speed()),
+            bytes_to_human(progress.progress_buckets_unpack.get_speed()),
         )
     }
 
