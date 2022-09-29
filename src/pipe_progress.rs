@@ -126,20 +126,20 @@ impl Default for ProgressContext {
 impl ProgressContext {
     pub fn to_json(&self) -> serde_json::Value {
         json!({
-            "start_time": self.start_time.to_rfc3339(),
+            "startTime": self.start_time.to_rfc3339(),
             "downloaded": self.total_downloaded + self.chunk_downloaded,
             "unpacked": self.total_unpacked,
-            "stop_requested": self.stop_requested,
+            "stopRequested": self.stop_requested,
             "paused": self.paused,
-            "elapsed_time": self.get_elapsed().num_milliseconds() as f64 / 1000.0,
-            "finish_time": self.finish_time.map(|ft| ft.to_rfc3339()),
-            "current_download_speed": self.progress_buckets_download.get_speed(),
-            "current_unpack_speed": self.progress_buckets_unpack.get_speed(),
-            "error_message": self.error_message,
-            "error_message_download": self.error_message_download,
-            "error_message_unpack": self.error_message_unpack,
-            "total_unpack_size": self.total_unpack_size,
-            "total_download_size": self.total_download_size,
+            "elapsedTime": self.get_elapsed().num_milliseconds() as f64 / 1000.0,
+            "finishTime": self.finish_time.map(|ft| ft.to_rfc3339()),
+            "currentDownloadSpeed": self.progress_buckets_download.get_speed(),
+            "currentUnpackSpeed": self.progress_buckets_unpack.get_speed(),
+            "errorMessage": self.error_message,
+            "errorMessageDownload": self.error_message_download,
+            "errorMessageUnpack": self.error_message_unpack,
+            "totalUnpackSize": self.total_unpack_size,
+            "totalDownloadSize": self.total_download_size,
         })
     }
 
