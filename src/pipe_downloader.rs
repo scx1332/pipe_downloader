@@ -479,11 +479,12 @@ impl PipeDownloader {
             let res = if download_url.ends_with(".gz") {
                 let mut gz = GzDecoder::new(&mut p);
                 decode_loop(pc.clone(), &options, &mut gz, send_unpack_chunks)
-            } else if download_url.ends_with(".old.lz4") {
-                let mut lz4 = Lz4Decoder::new(&mut p).unwrap();
+            } else if download_url.ends_with(".lz4-rust") {
+                //rust implementation is slower - you can test that renaming source file from .lz4 to .lz4-rust
+                let mut lz4 = FrameDecoder::new(&mut p);
                 decode_loop(pc.clone(), &options, &mut lz4, send_unpack_chunks)
             } else if download_url.ends_with(".lz4") {
-                let mut lz4 = FrameDecoder::new(&mut p);
+                let mut lz4 = Lz4Decoder::new(&mut p).unwrap();
                 decode_loop(pc.clone(), &options, &mut lz4, send_unpack_chunks)
             } else if download_url.ends_with(".bz2") {
                 let mut bz2 = BzDecoder::new(&mut p);
