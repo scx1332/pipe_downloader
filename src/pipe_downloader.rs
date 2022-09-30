@@ -16,6 +16,7 @@ use crate::lz4_decoder::Lz4Decoder;
 
 use anyhow::anyhow;
 use bzip2::read::BzDecoder;
+use lz4_flex::frame::FrameDecoder;
 use std::time::Duration;
 use tar::Archive;
 
@@ -39,6 +40,19 @@ impl Default for PipeDownloaderOptions {
             max_download_speed: None,
             force_no_chunks: false,
         }
+    }
+}
+
+impl PipeDownloaderOptions {
+    pub fn from_env() -> Self {
+        let mut options = Self::default();
+        if let Ok(download_buffer) = std::env::var("PIPE_DOWNLOADER_DOWNLOAD_BUFFER") {
+            options.chunk_size_downloader = usize::from_str(&download_buffer).unwrap();
+        }
+        if let Ok(decoder_buffer) = std::env::var("PIPE_DOWNLOADER_DECODER_BUFFER") {
+            options.chunk_size_decoder = usize::from_str(&decoder_buffer).unwrap();
+        }
+        options
     }
 }
 
@@ -465,8 +479,11 @@ impl PipeDownloader {
             let res = if download_url.ends_with(".gz") {
                 let mut gz = GzDecoder::new(&mut p);
                 decode_loop(pc.clone(), &options, &mut gz, send_unpack_chunks)
-            } else if download_url.ends_with(".lz4") {
+            } else if download_url.ends_with(".old.lz4") {
                 let mut lz4 = Lz4Decoder::new(&mut p).unwrap();
+                decode_loop(pc.clone(), &options, &mut lz4, send_unpack_chunks)
+            } else if download_url.ends_with(".lz4") {
+                let mut lz4 = FrameDecoder::new(&mut p);
                 decode_loop(pc.clone(), &options, &mut lz4, send_unpack_chunks)
             } else if download_url.ends_with(".bz2") {
                 let mut bz2 = BzDecoder::new(&mut p);

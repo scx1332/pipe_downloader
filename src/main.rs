@@ -1,8 +1,8 @@
-mod lz4_decoder;
 mod pipe_downloader;
 mod pipe_progress;
 mod pipe_utils;
 mod pipe_wrapper;
+mod lz4_decoder;
 
 use anyhow;
 use std::path::PathBuf;
@@ -53,7 +53,7 @@ fn main() -> anyhow::Result<()> {
     env_logger::init();
     let opt: Opt = Opt::from_args();
 
-    let mut options = PipeDownloaderOptions::default();
+    let mut options = PipeDownloaderOptions::from_env();
     options.chunk_size_decoder = opt.unpack_buffer;
     options.chunk_size_downloader = opt.download_buffer;
     options.max_download_speed = opt.limit_speed;
