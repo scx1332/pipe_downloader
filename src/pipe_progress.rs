@@ -132,6 +132,7 @@ impl ProgressContext {
             "stopRequested": self.stop_requested,
             "paused": self.paused,
             "elapsedTime": self.get_elapsed().num_milliseconds() as f64 / 1000.0,
+            "estimatedTimeLeft": self.get_time_left_sec(),
             "finishTime": self.finish_time.map(|ft| ft.to_rfc3339()),
             "currentDownloadSpeed": self.progress_buckets_download.get_speed(),
             "currentUnpackSpeed": self.progress_buckets_unpack.get_speed(),
@@ -145,6 +146,21 @@ impl ProgressContext {
 
     pub fn get_elapsed(&self) -> chrono::Duration {
         self.finish_time.unwrap_or(chrono::Utc::now()) - self.start_time
+    }
+
+    pub fn get_time_left_sec(&self) -> Option<u64> {
+        if self.finish_time.is_some() {
+            return Some(0);
+        }
+        let download_speed = self.get_download_speed();
+        if download_speed < 100 {
+            return None
+        }
+        if let Some(total_download_size) = self.total_download_size {
+            let seconds_left = (total_download_size - self.total_downloaded - self.chunk_downloaded) / download_speed;
+            return Some(seconds_left as u64)
+        }
+        None
     }
 
     pub fn get_download_speed(&self) -> usize {

@@ -421,14 +421,39 @@ impl PipeDownloader {
 
     pub fn get_progress_human_line(self: &PipeDownloader) -> String {
         let progress = self.get_progress_guard();
+
+        let eta_string = if let Some(eta) = progress.get_time_left_sec() {
+            let seconds = eta % 60;
+            let minutes = (eta / 60) % 60;
+            let hours = (eta / 60) / 60;
+            format!(
+                "ETA: {:02}:{:02}:{:02}",
+                hours,
+                minutes,
+                seconds
+            )
+        } else {
+            "ETA: unknown".to_string()
+        };
+        let percent_string = if let Some(total_length) = progress.total_download_size {
+            format!(
+                "[{:.2}%]",
+                ((progress.total_downloaded + progress.chunk_downloaded) as f64 / total_length as f64) * 100.0
+            )
+        } else {
+            "".to_string()
+        };
+
         format!(
-            "Downloaded: {} [{}/s now: {}/s], Unpack: {} [{}/s now: {}/s]",
+            "Downloaded: {} [{}/s now: {}/s], Unpack: {} [{}/s now: {}/s] - {} {}",
             bytes_to_human(progress.total_downloaded + progress.chunk_downloaded),
             bytes_to_human(progress.get_download_speed()),
             bytes_to_human(progress.progress_buckets_download.get_speed()),
             bytes_to_human(progress.total_unpacked),
             bytes_to_human(progress.get_unpack_speed()),
             bytes_to_human(progress.progress_buckets_unpack.get_speed()),
+            eta_string,
+            percent_string
         )
     }
 
