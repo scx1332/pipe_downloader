@@ -154,11 +154,13 @@ impl ProgressContext {
         }
         let download_speed = self.get_download_speed();
         if download_speed < 100 {
-            return None
+            return None;
         }
         if let Some(total_download_size) = self.total_download_size {
-            let seconds_left = (total_download_size - self.total_downloaded - self.chunk_downloaded) / download_speed;
-            return Some(seconds_left as u64)
+            let seconds_left =
+                (total_download_size - self.total_downloaded - self.chunk_downloaded)
+                    / download_speed;
+            return Some(seconds_left as u64);
         }
         None
     }

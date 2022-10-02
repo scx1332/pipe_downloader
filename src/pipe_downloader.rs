@@ -17,6 +17,7 @@ use crate::lz4_decoder::Lz4Decoder;
 use anyhow::anyhow;
 use bzip2::read::BzDecoder;
 use lz4_flex::frame::FrameDecoder;
+use reqwest::blocking::Response;
 use std::time::Duration;
 use tar::Archive;
 
@@ -82,17 +83,12 @@ impl PipeDownloader {
     }
 }
 
-enum DownloadChunkResult {
-    Data(Vec<u8>),
-    PartialHeaderNotSupported,
-}
-
 fn download_chunk(
     progress_context: Arc<Mutex<ProgressContext>>,
     range: &std::ops::Range<usize>,
     max_speed: Option<usize>,
     response: &mut reqwest::blocking::Response,
-) -> anyhow::Result<DownloadChunkResult> {
+) -> anyhow::Result<Vec<u8>> {
     let mut buf_vec: Vec<u8> = Vec::with_capacity(range.end - range.start);
 
     let mut buf = vec![0; 1024 * 1024];
@@ -150,7 +146,7 @@ fn download_chunk(
         range.end - range.start
     );
 
-    return Ok(DownloadChunkResult::Data(buf_vec));
+    return Ok(buf_vec);
 }
 
 fn request_chunk(
@@ -158,8 +154,7 @@ fn request_chunk(
     url: &str,
     client: &reqwest::blocking::Client,
     range: &std::ops::Range<usize>,
-    max_speed: Option<usize>,
-) -> anyhow::Result<DownloadChunkResult> {
+) -> anyhow::Result<Response> {
     log::debug!(
         "Downloading chunk: range {:?} / {}",
         range,
@@ -177,11 +172,13 @@ fn request_chunk(
         .to_str()?;
     let content_length = usize::from_str(content_length)?;
 
-    if status == StatusCode::OK {
-        return Ok(DownloadChunkResult::PartialHeaderNotSupported);
-        //return Err(anyhow::anyhow!("Seems like server does not support partial content: {}", status));
+    if status == StatusCode::OK && range.start != 0 {
+        return Err(anyhow::anyhow!(
+            "Seems like server does not support partial content: {}",
+            status
+        ));
     }
-    if status != StatusCode::PARTIAL_CONTENT {
+    if status != StatusCode::PARTIAL_CONTENT && range.start != 0 {
         return Err(anyhow::anyhow!("unexpected status code: {}", status));
     } else {
         log::info!(
@@ -195,7 +192,12 @@ fn request_chunk(
             content_length
         ));
     }
-    download_chunk(progress_context, range, max_speed, &mut response)
+    Ok(response)
+}
+
+enum RequestChunkResult {
+    Data(Response),
+    PartialHeaderNotSupported,
 }
 
 fn decode_loop<T: Read>(
@@ -278,9 +280,11 @@ fn download_loop(
             use_chunks = false;
         }
     }
-    if !use_chunks {
-        response = client.get(&download_url).send()?;
-    }
+    let mut download_response = if !use_chunks {
+        Some(client.get(&download_url).send()?)
+    } else {
+        None
+    };
 
     let chunk_size = options.chunk_size_downloader;
 
@@ -305,45 +309,55 @@ fn download_loop(
                 thread::sleep(Duration::from_secs(5));
                 continue;
             }
-            let result = if use_chunks {
-                request_chunk(
-                    progress_context.clone(),
-                    &download_url,
-                    &client,
-                    &range,
-                    options.max_download_speed,
-                )
-            } else {
+
+            let result = if let Some(download_response) = &mut download_response {
                 download_chunk(
                     progress_context.clone(),
                     &range,
                     options.max_download_speed,
-                    &mut response,
+                    download_response,
                 )
+            } else {
+                let new_range = std::ops::Range {
+                    start: range.start,
+                    end: total_length,
+                };
+                match request_chunk(progress_context.clone(), &download_url, &client, &new_range) {
+                    Ok(mut new_response) => {
+                        let res = download_chunk(
+                            progress_context.clone(),
+                            &range,
+                            options.max_download_speed,
+                            &mut new_response,
+                        );
+                        download_response = Some(new_response);
+                        res
+                    },
+                    Err(err) => {
+                        log::error!("Error while requesting chunk: {:?}", err);
+                        Err(err)
+                    }
+                }
             };
             match result {
-                Ok(buf) => match buf {
-                    DownloadChunkResult::Data(buf) => {
-                        {
-                            let mut progress = progress_context.lock().unwrap();
-                            progress.total_downloaded += progress.chunk_downloaded;
-                            progress.chunk_downloaded = 0;
-                            if progress.stop_requested {
-                                return Err(anyhow::anyhow!("Stop requested"));
-                            }
+                Ok(buf) => {
+                    {
+                        let mut progress = progress_context.lock().unwrap();
+                        progress.total_downloaded += progress.chunk_downloaded;
+                        progress.chunk_downloaded = 0;
+                        if progress.stop_requested {
+                            return Err(anyhow::anyhow!("Stop requested"));
                         }
-                        if let Err(err) = send_download_chunks.send(buf) {
-                            log::error!("Error while sending chunk: {:?}", err);
-                            return Err(anyhow::anyhow!("Error while sending chunk: {:?}", err));
-                        }
-                        break;
                     }
-                    DownloadChunkResult::PartialHeaderNotSupported => {
-                        log::error!("Partial header not supported");
-                        return Err(anyhow::anyhow!("Partial header not supported"));
+                    if let Err(err) = send_download_chunks.send(buf) {
+                        log::error!("Error while sending chunk: {:?}", err);
+                        return Err(anyhow::anyhow!("Error while sending chunk: {:?}", err));
                     }
-                },
+                    break;
+                }
                 Err(err) => {
+                    //reset response to force reconnection
+                    download_response = None;
                     let progress = {
                         let mut progress = progress_context.lock().unwrap();
                         progress.chunk_downloaded = 0;
@@ -426,19 +440,16 @@ impl PipeDownloader {
             let seconds = eta % 60;
             let minutes = (eta / 60) % 60;
             let hours = (eta / 60) / 60;
-            format!(
-                "ETA: {:02}:{:02}:{:02}",
-                hours,
-                minutes,
-                seconds
-            )
+            format!("ETA: {:02}:{:02}:{:02}", hours, minutes, seconds)
         } else {
             "ETA: unknown".to_string()
         };
         let percent_string = if let Some(total_length) = progress.total_download_size {
             format!(
                 "[{:.2}%]",
-                ((progress.total_downloaded + progress.chunk_downloaded) as f64 / total_length as f64) * 100.0
+                ((progress.total_downloaded + progress.chunk_downloaded) as f64
+                    / total_length as f64)
+                    * 100.0
             )
         } else {
             "".to_string()
