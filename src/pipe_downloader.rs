@@ -31,6 +31,7 @@ pub struct PipeDownloaderOptions {
     pub chunk_size_decoder: usize,
     pub max_download_speed: Option<usize>,
     pub force_no_chunks: bool,
+    pub download_threads: usize,
 }
 
 impl Default for PipeDownloaderOptions {
@@ -40,6 +41,7 @@ impl Default for PipeDownloaderOptions {
             chunk_size_decoder: 10_000_000,
             max_download_speed: None,
             force_no_chunks: false,
+            download_threads: 2,
         }
     }
 }
@@ -52,6 +54,9 @@ impl PipeDownloaderOptions {
         }
         if let Ok(decoder_buffer) = std::env::var("PIPE_DOWNLOADER_DECODER_BUFFER") {
             options.chunk_size_decoder = usize::from_str(&decoder_buffer).unwrap();
+        }
+        if let Ok(download_threads) = std::env::var("PIPE_DOWNLOADER_DOWNLOAD_THREADS") {
+            options.download_threads = usize::from_str(&download_threads).unwrap();
         }
         options
     }
@@ -84,7 +89,7 @@ impl PipeDownloader {
 }
 
 fn download_chunk(
-    thread_num: usize,
+    thread_no: usize,
     progress_context: Arc<Mutex<ProgressContext>>,
     range: &std::ops::Range<usize>,
     max_speed: Option<usize>,
@@ -110,7 +115,7 @@ fn download_chunk(
         buf_vec.extend_from_slice(&buf[..n]);
         {
             let mut progress_context = progress_context.lock().unwrap();
-            if let Some(cd) = progress_context.chunk_downloaded.get_mut(thread_num) {
+            if let Some(cd) = progress_context.chunk_downloaded.get_mut(thread_no) {
                 *cd += n;
             }
             progress_context.progress_buckets_download.add_bytes(n);
@@ -245,7 +250,7 @@ fn decode_loop<T: Read>(
 }
 
 fn download_loop(
-    thread_num: usize,
+    thread_no: usize,
     thread_count: usize,
     options: PipeDownloaderOptions,
     progress_context: Arc<Mutex<ProgressContext>>,
@@ -304,7 +309,7 @@ fn download_loop(
     let thread_count = if use_chunks {
         thread_count
     } else {
-        if thread_num != 0 {
+        if thread_no != 0 {
             log::warn!("Thread number is set, but server does not support partial content, falling back to single request");
             return Ok(());
         } else {
@@ -343,7 +348,7 @@ fn download_loop(
             break;
         }
         //one thread for one range
-        if i % thread_count != thread_num {
+        if i % thread_count != thread_no {
             continue;
         }
         loop {
@@ -383,7 +388,7 @@ fn download_loop(
 
             let result = if let Some(download_response) = &mut download_response {
                 download_chunk(
-                    thread_num,
+                    thread_no,
                     progress_context.clone(),
                     &range,
                     options.max_download_speed,
@@ -391,14 +396,20 @@ fn download_loop(
                 )
             } else {
                 // recreate response if last one was closed
-                let new_range = std::ops::Range {
-                    start: range.start,
-                    end: total_length,
+                let new_range = if thread_count == 1 {
+                    //reuse connection if only one thread
+                    std::ops::Range {
+                        start: range.start,
+                        end: total_length,
+                    }
+                } else {
+                    range.clone()
                 };
+
                 match request_chunk(&download_url, &client, &new_range) {
                     Ok(mut new_response) => {
                         let res = download_chunk(
-                            thread_num,
+                            thread_no,
                             progress_context.clone(),
                             &range,
                             options.max_download_speed,
@@ -417,8 +428,8 @@ fn download_loop(
                 Ok(buf) => {
                     {
                         let mut progress = progress_context.lock().unwrap();
-                        progress.total_downloaded += progress.chunk_downloaded[thread_num];
-                        progress.chunk_downloaded[thread_num] = 0;
+                        progress.total_downloaded += progress.chunk_downloaded[thread_no];
+                        progress.chunk_downloaded[thread_no] = 0;
                         if progress.stop_requested {
                             return Err(anyhow::anyhow!("Stop requested"));
                         }
@@ -451,7 +462,7 @@ fn download_loop(
                     download_response = None;
                     let progress = {
                         let mut progress = progress_context.lock().unwrap();
-                        progress.chunk_downloaded[thread_num] = 0;
+                        progress.chunk_downloaded[thread_no] = 0;
                         progress.clone()
                     };
                     if progress.stop_requested {
@@ -598,17 +609,17 @@ impl PipeDownloader {
         log::info!("starting download...");
         let (send_download_chunks, receive_download_chunks) = sync_channel(1);
 
-        let thread_count = 2;
+        let download_thread_count = self.options.download_threads;
         let mut threads = Vec::new();
-        for thread_num in 0..thread_count {
+        for thread_no in 0..download_thread_count {
             let pc = self.progress_context.clone();
             let download_url = url.clone();
             let options = self.options.clone();
             let send = send_download_chunks.clone();
             threads.push(thread::spawn(move || {
                 match download_loop(
-                    thread_num,
-                    thread_count,
+                    thread_no,
+                    download_thread_count,
                     options,
                     pc.clone(),
                     send,
