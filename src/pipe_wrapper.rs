@@ -45,26 +45,32 @@ impl Read for MpscReaderFromReceiver {
                 let dt = self.chunk_waiting_list.swap_remove(found_idx);
                 self.current_buf = dt.data;
                 self.current_buf_pos = 0;
-            }
-            loop {
-                let new_chunk = self.receiver.recv().map_err(|err| {
-                    std::io::Error::new(ErrorKind::InvalidData, format!("Receive error {:?}", err))
-                })?;
-                if new_chunk.range.start == self.pos {
-                    if self.debug {
-                        log::warn!("Found compatible chunk {}", self.pos);
+            } else {
+                loop {
+                    let new_chunk = self.receiver.recv().map_err(|err| {
+                        std::io::Error::new(
+                            ErrorKind::InvalidData,
+                            format!("Receive error {:?}", err),
+                        )
+                    })?;
+                    if new_chunk.range.start == self.pos {
+                        if self.debug {
+                            log::warn!("Found compatible chunk {}", self.pos);
+                        }
+                        self.current_buf = new_chunk.data;
+                        self.current_buf_pos = 0;
+                        break;
+                    } else {
+                        if self.debug {
+                            log::warn!(
+                                "Found incompatible chunk, adding to waiting list {}",
+                                new_chunk.range.start
+                            );
+                        }
+                        self.chunk_waiting_list.push(new_chunk);
                     }
-                    self.current_buf = new_chunk.data;
-                    self.current_buf_pos = 0;
-                    break;
-                } else {
-                    if self.debug {
-                        log::warn!("Found incompatible chunk, adding to waiting list {}", self.pos);
-                    }
-                    self.chunk_waiting_list.push(new_chunk);
                 }
             }
-
         }
         let min_val = std::cmp::min(self.current_buf.len() - self.current_buf_pos, buf.len());
 
