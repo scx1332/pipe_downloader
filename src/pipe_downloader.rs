@@ -23,7 +23,7 @@ use tar::Archive;
 
 use crate::pipe_progress::ProgressContext;
 use crate::pipe_utils::bytes_to_human;
-use crate::pipe_wrapper::MpscReaderFromReceiver;
+use crate::pipe_wrapper::{DataChunk, MpscReaderFromReceiver};
 
 #[derive(Debug, Clone)]
 pub struct PipeDownloaderOptions {
@@ -198,7 +198,7 @@ fn decode_loop<T: Read>(
     progress_context: Arc<Mutex<ProgressContext>>,
     options: &PipeDownloaderOptions,
     decoder: &mut T,
-    send: std::sync::mpsc::SyncSender<Vec<u8>>,
+    send: std::sync::mpsc::SyncSender<DataChunk>,
 ) -> anyhow::Result<()> {
     let mut unpacked_size = 0;
     loop {
@@ -231,7 +231,11 @@ fn decode_loop<T: Read>(
             bytes_to_human(unpacked_size)
         );
         buf.resize(bytes_read, 0);
-        send.send(buf)?;
+        let data_chunk = DataChunk {
+            data: buf,
+            range: unpacked_size - bytes_read..unpacked_size,
+        };
+        send.send(data_chunk)?;
     }
     log::info!("Finishing decode loop");
     Ok(())
@@ -240,7 +244,7 @@ fn decode_loop<T: Read>(
 fn download_loop(
     options: PipeDownloaderOptions,
     progress_context: Arc<Mutex<ProgressContext>>,
-    send_download_chunks: SyncSender<Vec<u8>>,
+    send_download_chunks: SyncSender<DataChunk>,
     download_url: &str,
 ) -> anyhow::Result<()> {
     let mut use_chunks = !options.force_no_chunks;
@@ -362,7 +366,11 @@ fn download_loop(
                             return Err(anyhow::anyhow!("Stop requested"));
                         }
                     }
-                    if let Err(err) = send_download_chunks.send(buf) {
+                    let dc = DataChunk {
+                        range: range.clone(),
+                        data: buf,
+                    };
+                    if let Err(err) = send_download_chunks.send(dc) {
                         log::error!("Error while sending chunk: {:?}", err);
                         return Err(anyhow::anyhow!("Error while sending chunk: {:?}", err));
                     }
@@ -520,8 +528,9 @@ impl PipeDownloader {
         let pc = self.progress_context.clone();
         let download_url = url.clone();
         let options = self.options.clone();
+        let send = send_download_chunks.clone();
         let t1 = thread::spawn(move || {
-            match download_loop(options, pc.clone(), send_download_chunks, &download_url) {
+            match download_loop(options, pc.clone(), send, &download_url) {
                 Ok(_) => {
                     log::info!("Download loop finished, finishing thread");
                 }
@@ -533,9 +542,27 @@ impl PipeDownloader {
                 }
             }
         });
-        let mut p = MpscReaderFromReceiver::new(receive_download_chunks);
+        let pc = self.progress_context.clone();
+        let download_url = url.clone();
+        let options = self.options.clone();
+        let send = send_download_chunks.clone();
+        let _t2 = thread::spawn(move || {
+            match download_loop(options, pc.clone(), send, &download_url) {
+                Ok(_) => {
+                    log::info!("Download loop finished, finishing thread");
+                }
+                Err(err) => {
+                    log::error!("Error in download loop: {:?}, finishing thread", err);
+                    //stop other threads as well
+                    pc.lock().unwrap().stop_requested = true;
+                    pc.lock().unwrap().error_message_download = Some(err.to_string());
+                }
+            }
+        });
 
-        let (send_unpack_chunks, receive_unpack_chunks) = sync_channel(1);
+        let mut p = MpscReaderFromReceiver::new(receive_download_chunks, true);
+
+        let (send_unpack_chunks, receive_unpack_chunks) = sync_channel::<DataChunk>(1);
 
         let pc = self.progress_context.clone();
         let download_url = url.clone();
@@ -574,7 +601,7 @@ impl PipeDownloader {
             log::info!("Decode loop finished, finishing thread");
         });
 
-        let mut p2 = MpscReaderFromReceiver::new(receive_unpack_chunks);
+        let mut p2 = MpscReaderFromReceiver::new(receive_unpack_chunks, false);
 
         let target_path = self.target_path.clone();
         let download_url = url.clone();
