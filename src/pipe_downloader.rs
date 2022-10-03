@@ -241,10 +241,28 @@ fn download_loop(
     options: PipeDownloaderOptions,
     progress_context: Arc<Mutex<ProgressContext>>,
     send_download_chunks: SyncSender<Vec<u8>>,
-    download_url: String,
+    download_url: &str,
 ) -> anyhow::Result<()> {
     let mut use_chunks = !options.force_no_chunks;
     let client = reqwest::blocking::Client::new();
+
+    //.link extension means that the files point to the file that we need to download
+    let download_url = if download_url.ends_with(".link") {
+        let url = client.get(download_url).send()?.text()?.trim().to_string();
+        if url.is_empty() {
+            return Err(anyhow::anyhow!("Empty url from link"));
+        }
+        if !url.starts_with("http://") && !url.starts_with("https://") {
+            return Err(anyhow::anyhow!(
+                "Wrong url, should start from http:// or https://"
+            ));
+        }
+        log::info!("Got download address from link: {}", url);
+        url
+    } else {
+        download_url.to_string()
+    };
+    progress_context.lock().unwrap().download_url = Some(download_url.clone());
 
     let response = client.head(&download_url).send()?;
     let length = response
@@ -377,6 +395,22 @@ fn download_loop(
     Ok(())
 }
 
+fn resolve_url(download_url: String, pc: Arc<Mutex<ProgressContext>>) -> anyhow::Result<String> {
+    if download_url.ends_with(".link") {
+        loop {
+            if let Some(url) = pc.lock().unwrap().download_url.clone() {
+                break Ok(url);
+            }
+            if pc.lock().unwrap().stop_requested {
+                return Err(anyhow::anyhow!("Stop requested"));
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+    } else {
+        Ok(download_url)
+    }
+}
+
 impl PipeDownloader {
     #[allow(unused)]
     pub fn signal_stop(self: &PipeDownloader) {
@@ -487,7 +521,7 @@ impl PipeDownloader {
         let download_url = url.clone();
         let options = self.options.clone();
         let t1 = thread::spawn(move || {
-            match download_loop(options, pc.clone(), send_download_chunks, download_url) {
+            match download_loop(options, pc.clone(), send_download_chunks, &download_url) {
                 Ok(_) => {
                     log::info!("Download loop finished, finishing thread");
                 }
@@ -507,6 +541,14 @@ impl PipeDownloader {
         let download_url = url.clone();
         let options = self.options.clone();
         let t2 = thread::spawn(move || {
+            let download_url = match resolve_url(download_url, pc.clone()) {
+                Ok(url) => url,
+                Err(err) => {
+                    pc.lock().unwrap().error_message_unpack = Some(err.to_string());
+                    return;
+                }
+            };
+
             let res = if download_url.ends_with(".gz") {
                 let mut gz = GzDecoder::new(&mut p);
                 decode_loop(pc.clone(), &options, &mut gz, send_unpack_chunks)
@@ -535,11 +577,19 @@ impl PipeDownloader {
         let mut p2 = MpscReaderFromReceiver::new(receive_unpack_chunks);
 
         let target_path = self.target_path.clone();
-        let url = url.clone();
+        let download_url = url.clone();
 
         let pc = self.progress_context.clone();
         self.thread_last_stage = Some(thread::spawn(move || {
-            let res = if url.contains(".tar.") {
+            let download_url = match resolve_url(download_url, pc.clone()) {
+                Ok(url) => url,
+                Err(err) => {
+                    pc.lock().unwrap().error_message = Some(err.to_string());
+                    return;
+                }
+            };
+
+            let res = if download_url.contains(".tar.") {
                 let mut archive = Archive::new(p2);
                 match archive.unpack(target_path) {
                     Ok(_) => {

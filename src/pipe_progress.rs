@@ -99,6 +99,7 @@ pub struct ProgressContext {
     pub error_message_download: Option<String>,
     pub error_message_unpack: Option<String>,
     pub error_message: Option<String>,
+    pub download_url: Option<String>,
 }
 
 impl Default for ProgressContext {
@@ -119,6 +120,7 @@ impl Default for ProgressContext {
             error_message: None,
             error_message_download: None,
             error_message_unpack: None,
+            download_url: None,
         }
     }
 }
@@ -141,6 +143,7 @@ impl ProgressContext {
             "errorMessageUnpack": self.error_message_unpack,
             "totalUnpackSize": self.total_unpack_size,
             "totalDownloadSize": self.total_download_size,
+            "downloadUrl": self.download_url
         })
     }
 
