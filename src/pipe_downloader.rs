@@ -150,7 +150,6 @@ fn download_chunk(
 }
 
 fn request_chunk(
-    progress_context: Arc<Mutex<ProgressContext>>,
     url: &str,
     client: &reqwest::blocking::Client,
     range: &std::ops::Range<usize>,
@@ -162,7 +161,7 @@ fn request_chunk(
     );
 
     let header = format!("bytes={}-{}", range.start, range.end - 1);
-    let mut response = client.get(url).header("Range", header).send()?;
+    let response = client.get(url).header("Range", header).send()?;
 
     let status = response.status();
     let content_length = response
@@ -193,11 +192,6 @@ fn request_chunk(
         ));
     }
     Ok(response)
-}
-
-enum RequestChunkResult {
-    Data(Response),
-    PartialHeaderNotSupported,
 }
 
 fn decode_loop<T: Read>(
@@ -252,7 +246,7 @@ fn download_loop(
     let mut use_chunks = !options.force_no_chunks;
     let client = reqwest::blocking::Client::new();
 
-    let mut response = client.head(&download_url).send()?;
+    let response = client.head(&download_url).send()?;
     let length = response
         .headers()
         .get(CONTENT_LENGTH)
@@ -318,11 +312,12 @@ fn download_loop(
                     download_response,
                 )
             } else {
+                // recreate response if last one was closed
                 let new_range = std::ops::Range {
                     start: range.start,
                     end: total_length,
                 };
-                match request_chunk(progress_context.clone(), &download_url, &client, &new_range) {
+                match request_chunk(&download_url, &client, &new_range) {
                     Ok(mut new_response) => {
                         let res = download_chunk(
                             progress_context.clone(),
@@ -332,7 +327,7 @@ fn download_loop(
                         );
                         download_response = Some(new_response);
                         res
-                    },
+                    }
                     Err(err) => {
                         log::error!("Error while requesting chunk: {:?}", err);
                         Err(err)
