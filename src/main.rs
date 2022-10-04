@@ -28,6 +28,10 @@ struct Opt {
     #[structopt(long = "limit-speed")]
     limit_speed: Option<usize>,
 
+    /// Number of download threads/connections
+    #[structopt(long = "download-threads", default_value = "2")]
+    download_threads: usize,
+
     /// Size of download buffer in bytes
     #[structopt(long = "download-buffer", default_value = "30000000")]
     download_buffer: usize,
@@ -58,6 +62,7 @@ fn main() -> anyhow::Result<()> {
     options.chunk_size_downloader = opt.download_buffer;
     options.max_download_speed = opt.limit_speed;
     options.force_no_chunks = opt.force_no_partial_content;
+    options.download_threads = opt.download_threads;
     let mut pd = PipeDownloader::new(&opt.url, &opt.output_dir, options);
     pd.start_download()?;
     let current_time = std::time::Instant::now();

@@ -23,7 +23,7 @@ use tar::Archive;
 
 use crate::pipe_progress::ProgressContext;
 use crate::pipe_utils::bytes_to_human;
-use crate::pipe_wrapper::MpscReaderFromReceiver;
+use crate::pipe_wrapper::{DataChunk, MpscReaderFromReceiver};
 
 #[derive(Debug, Clone)]
 pub struct PipeDownloaderOptions {
@@ -31,6 +31,7 @@ pub struct PipeDownloaderOptions {
     pub chunk_size_decoder: usize,
     pub max_download_speed: Option<usize>,
     pub force_no_chunks: bool,
+    pub download_threads: usize,
 }
 
 impl Default for PipeDownloaderOptions {
@@ -40,6 +41,7 @@ impl Default for PipeDownloaderOptions {
             chunk_size_decoder: 10_000_000,
             max_download_speed: None,
             force_no_chunks: false,
+            download_threads: 2,
         }
     }
 }
@@ -52,6 +54,9 @@ impl PipeDownloaderOptions {
         }
         if let Ok(decoder_buffer) = std::env::var("PIPE_DOWNLOADER_DECODER_BUFFER") {
             options.chunk_size_decoder = usize::from_str(&decoder_buffer).unwrap();
+        }
+        if let Ok(download_threads) = std::env::var("PIPE_DOWNLOADER_DOWNLOAD_THREADS") {
+            options.download_threads = usize::from_str(&download_threads).unwrap();
         }
         options
     }
@@ -84,6 +89,7 @@ impl PipeDownloader {
 }
 
 fn download_chunk(
+    thread_no: usize,
     progress_context: Arc<Mutex<ProgressContext>>,
     range: &std::ops::Range<usize>,
     max_speed: Option<usize>,
@@ -109,7 +115,9 @@ fn download_chunk(
         buf_vec.extend_from_slice(&buf[..n]);
         {
             let mut progress_context = progress_context.lock().unwrap();
-            progress_context.chunk_downloaded += n;
+            if let Some(cd) = progress_context.chunk_downloaded.get_mut(thread_no) {
+                *cd += n;
+            }
             progress_context.progress_buckets_download.add_bytes(n);
             if progress_context.paused {
                 return Err(anyhow::anyhow!("Download paused"));
@@ -198,7 +206,7 @@ fn decode_loop<T: Read>(
     progress_context: Arc<Mutex<ProgressContext>>,
     options: &PipeDownloaderOptions,
     decoder: &mut T,
-    send: std::sync::mpsc::SyncSender<Vec<u8>>,
+    send: std::sync::mpsc::SyncSender<DataChunk>,
 ) -> anyhow::Result<()> {
     let mut unpacked_size = 0;
     loop {
@@ -231,16 +239,22 @@ fn decode_loop<T: Read>(
             bytes_to_human(unpacked_size)
         );
         buf.resize(bytes_read, 0);
-        send.send(buf)?;
+        let data_chunk = DataChunk {
+            data: buf,
+            range: unpacked_size - bytes_read..unpacked_size,
+        };
+        send.send(data_chunk)?;
     }
     log::info!("Finishing decode loop");
     Ok(())
 }
 
 fn download_loop(
+    thread_no: usize,
+    thread_count: usize,
     options: PipeDownloaderOptions,
     progress_context: Arc<Mutex<ProgressContext>>,
-    send_download_chunks: SyncSender<Vec<u8>>,
+    send_download_chunks: SyncSender<DataChunk>,
     download_url: &str,
 ) -> anyhow::Result<()> {
     let mut use_chunks = !options.force_no_chunks;
@@ -292,6 +306,22 @@ fn download_loop(
             use_chunks = false;
         }
     }
+    let thread_count = if use_chunks {
+        thread_count
+    } else {
+        if thread_no != 0 {
+            log::warn!("Thread number is set, but server does not support partial content, falling back to single request");
+            return Ok(());
+        } else {
+            1
+        }
+    };
+
+    progress_context
+        .lock()
+        .unwrap()
+        .chunk_downloaded
+        .resize(thread_count, 0);
     let mut download_response = if !use_chunks {
         Some(client.get(&download_url).send()?)
     } else {
@@ -300,9 +330,39 @@ fn download_loop(
 
     let chunk_size = options.chunk_size_downloader;
 
+    {
+        //first thread to fill this value (blocking other threads)
+        let mut pc = progress_context.lock().unwrap();
+        if pc.unfinished_chunks.is_empty() {
+            for i in 0..((total_length - 1) / chunk_size + 1) {
+                pc.unfinished_chunks.push(i);
+            }
+            pc.unfinished_chunks.reverse();
+            log::warn!("Unfinished chunks: {:?}", pc.unfinished_chunks);
+        }
+    }
+
     for i in 0..((total_length - 1) / chunk_size + 1) {
         let max_length = std::cmp::min(chunk_size, total_length - i * chunk_size);
         if max_length == 0 {
+            break;
+        }
+        //one thread for one range
+        if i % thread_count != thread_no {
+            continue;
+        }
+        loop {
+            let smallest_unfinished = *progress_context
+                .lock()
+                .unwrap()
+                .unfinished_chunks
+                .last()
+                .expect("Critical error unfinished chunks have to be here");
+            if i - smallest_unfinished > thread_count {
+                //log::warn!("Waiting for chunk {}", i);
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                continue;
+            }
             break;
         }
         let range = std::ops::Range {
@@ -321,9 +381,14 @@ fn download_loop(
                 thread::sleep(Duration::from_secs(5));
                 continue;
             }
+            if thread_count > 1 {
+                //unfortunately we can't reuse response, when using more threads
+                download_response = None;
+            }
 
             let result = if let Some(download_response) = &mut download_response {
                 download_chunk(
+                    thread_no,
                     progress_context.clone(),
                     &range,
                     options.max_download_speed,
@@ -331,13 +396,20 @@ fn download_loop(
                 )
             } else {
                 // recreate response if last one was closed
-                let new_range = std::ops::Range {
-                    start: range.start,
-                    end: total_length,
+                let new_range = if thread_count == 1 {
+                    //reuse connection if only one thread
+                    std::ops::Range {
+                        start: range.start,
+                        end: total_length,
+                    }
+                } else {
+                    range.clone()
                 };
+
                 match request_chunk(&download_url, &client, &new_range) {
                     Ok(mut new_response) => {
                         let res = download_chunk(
+                            thread_no,
                             progress_context.clone(),
                             &range,
                             options.max_download_speed,
@@ -356,13 +428,30 @@ fn download_loop(
                 Ok(buf) => {
                     {
                         let mut progress = progress_context.lock().unwrap();
-                        progress.total_downloaded += progress.chunk_downloaded;
-                        progress.chunk_downloaded = 0;
+                        progress.total_downloaded += progress.chunk_downloaded[thread_no];
+                        progress.chunk_downloaded[thread_no] = 0;
                         if progress.stop_requested {
                             return Err(anyhow::anyhow!("Stop requested"));
                         }
                     }
-                    if let Err(err) = send_download_chunks.send(buf) {
+                    let dc = DataChunk {
+                        range: range.clone(),
+                        data: buf,
+                    };
+                    {
+                        // search from right to left, because smallest chunk are on the right
+                        // also remove element from right, because it is faster
+                        let mut pc = progress_context.lock().unwrap();
+                        let idx_to_remove =
+                            pc.unfinished_chunks.iter().rposition(|el| *el == i).expect(
+                                format!("Critical error unfinished chunks have to be here {}", i)
+                                    .as_str(),
+                            );
+                        assert!(i == pc.unfinished_chunks[idx_to_remove]);
+                        log::warn!("Removing chunk {} at idx {}", i, idx_to_remove);
+                        pc.unfinished_chunks.remove(idx_to_remove);
+                    }
+                    if let Err(err) = send_download_chunks.send(dc) {
                         log::error!("Error while sending chunk: {:?}", err);
                         return Err(anyhow::anyhow!("Error while sending chunk: {:?}", err));
                     }
@@ -373,7 +462,7 @@ fn download_loop(
                     download_response = None;
                     let progress = {
                         let mut progress = progress_context.lock().unwrap();
-                        progress.chunk_downloaded = 0;
+                        progress.chunk_downloaded[thread_no] = 0;
                         progress.clone()
                     };
                     if progress.stop_requested {
@@ -476,7 +565,8 @@ impl PipeDownloader {
         let percent_string = if let Some(total_length) = progress.total_download_size {
             format!(
                 "[{:.2}%]",
-                ((progress.total_downloaded + progress.chunk_downloaded) as f64
+                ((progress.total_downloaded + progress.chunk_downloaded.iter().sum::<usize>())
+                    as f64
                     / total_length as f64)
                     * 100.0
             )
@@ -486,7 +576,9 @@ impl PipeDownloader {
 
         format!(
             "Downloaded: {} [{}/s now: {}/s], Unpack: {} [{}/s now: {}/s] - {} {}",
-            bytes_to_human(progress.total_downloaded + progress.chunk_downloaded),
+            bytes_to_human(
+                progress.total_downloaded + progress.chunk_downloaded.iter().sum::<usize>()
+            ),
             bytes_to_human(progress.get_download_speed()),
             bytes_to_human(progress.progress_buckets_download.get_speed()),
             bytes_to_human(progress.total_unpacked),
@@ -517,25 +609,38 @@ impl PipeDownloader {
         log::info!("starting download...");
         let (send_download_chunks, receive_download_chunks) = sync_channel(1);
 
-        let pc = self.progress_context.clone();
-        let download_url = url.clone();
-        let options = self.options.clone();
-        let t1 = thread::spawn(move || {
-            match download_loop(options, pc.clone(), send_download_chunks, &download_url) {
-                Ok(_) => {
-                    log::info!("Download loop finished, finishing thread");
+        let download_thread_count = self.options.download_threads;
+        let mut threads = Vec::new();
+        for thread_no in 0..download_thread_count {
+            let pc = self.progress_context.clone();
+            let download_url = url.clone();
+            let options = self.options.clone();
+            let send = send_download_chunks.clone();
+            threads.push(thread::spawn(move || {
+                match download_loop(
+                    thread_no,
+                    download_thread_count,
+                    options,
+                    pc.clone(),
+                    send,
+                    &download_url,
+                ) {
+                    Ok(_) => {
+                        log::info!("Download loop finished, finishing thread");
+                    }
+                    Err(err) => {
+                        log::error!("Error in download loop: {:?}, finishing thread", err);
+                        //stop other threads as well
+                        pc.lock().unwrap().stop_requested = true;
+                        pc.lock().unwrap().error_message_download = Some(err.to_string());
+                    }
                 }
-                Err(err) => {
-                    log::error!("Error in download loop: {:?}, finishing thread", err);
-                    //stop other threads as well
-                    pc.lock().unwrap().stop_requested = true;
-                    pc.lock().unwrap().error_message_download = Some(err.to_string());
-                }
-            }
-        });
-        let mut p = MpscReaderFromReceiver::new(receive_download_chunks);
+            }));
+        }
 
-        let (send_unpack_chunks, receive_unpack_chunks) = sync_channel(1);
+        let mut p = MpscReaderFromReceiver::new(receive_download_chunks, true);
+
+        let (send_unpack_chunks, receive_unpack_chunks) = sync_channel::<DataChunk>(1);
 
         let pc = self.progress_context.clone();
         let download_url = url.clone();
@@ -574,7 +679,7 @@ impl PipeDownloader {
             log::info!("Decode loop finished, finishing thread");
         });
 
-        let mut p2 = MpscReaderFromReceiver::new(receive_unpack_chunks);
+        let mut p2 = MpscReaderFromReceiver::new(receive_unpack_chunks, false);
 
         let target_path = self.target_path.clone();
         let download_url = url.clone();
@@ -617,14 +722,18 @@ impl PipeDownloader {
             match res {
                 Ok(_) => {
                     pc.lock().unwrap().stop_requested = true;
-                    t1.join().unwrap();
+                    for t1 in threads {
+                        t1.join().unwrap();
+                    }
                     t2.join().unwrap();
                     pc.lock().unwrap().finish_time = Some(chrono::Utc::now());
                 }
                 Err(err) => {
                     pc.lock().unwrap().error_message = Some(format!("{:?}", err));
                     pc.lock().unwrap().stop_requested = true;
-                    t1.join().unwrap();
+                    for t1 in threads {
+                        t1.join().unwrap();
+                    }
                     t2.join().unwrap();
                     pc.lock().unwrap().error_time = Some(chrono::Utc::now());
                 }

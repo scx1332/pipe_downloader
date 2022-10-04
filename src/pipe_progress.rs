@@ -85,9 +85,10 @@ impl ProgressHistory {
 #[derive(Debug, Clone)]
 pub struct ProgressContext {
     pub start_time: chrono::DateTime<chrono::Utc>,
+    pub unfinished_chunks: Vec<usize>,
     pub total_downloaded: usize,
     pub total_download_size: Option<usize>,
-    pub chunk_downloaded: usize,
+    pub chunk_downloaded: Vec<usize>,
     pub total_unpacked: usize,
     pub total_unpack_size: Option<usize>,
     pub stop_requested: bool,
@@ -106,9 +107,10 @@ impl Default for ProgressContext {
     fn default() -> ProgressContext {
         ProgressContext {
             start_time: chrono::Utc::now(),
+            unfinished_chunks: vec![],
             total_download_size: None,
             total_downloaded: 0,
-            chunk_downloaded: 0,
+            chunk_downloaded: vec![],
             total_unpacked: 0,
             total_unpack_size: None,
             stop_requested: false,
@@ -129,7 +131,7 @@ impl ProgressContext {
     pub fn to_json(&self) -> serde_json::Value {
         json!({
             "startTime": self.start_time.to_rfc3339(),
-            "downloaded": self.total_downloaded + self.chunk_downloaded,
+            "downloaded": self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>(),
             "unpacked": self.total_unpacked,
             "stopRequested": self.stop_requested,
             "paused": self.paused,
@@ -160,9 +162,10 @@ impl ProgressContext {
             return None;
         }
         if let Some(total_download_size) = self.total_download_size {
-            let seconds_left =
-                (total_download_size - self.total_downloaded - self.chunk_downloaded)
-                    / download_speed;
+            let seconds_left = (total_download_size
+                - self.total_downloaded
+                - self.chunk_downloaded.iter().sum::<usize>())
+                / download_speed;
             return Some(seconds_left as u64);
         }
         None
@@ -176,7 +179,7 @@ impl ProgressContext {
         if elapsed.num_milliseconds() == 0 {
             return 0;
         }
-        let res_f64 = (self.total_downloaded + self.chunk_downloaded) as f64
+        let res_f64 = (self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>()) as f64
             / (elapsed.num_milliseconds() as f64 / 1000.0);
         res_f64.round() as usize
     }
