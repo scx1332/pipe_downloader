@@ -35,9 +35,8 @@ jobs:
           args: --release --target aarch64-unknown-linux-musl
 
       - name: Upload
-        uses: svenstaro/upload-release-action@v2
+        uses: svenstaro/upload-release-action@2.3.0
           with:
-            repo_token: ${{ secrets.GITHUB_TOKEN }}
             file: target/aarch64-unknown-linux-musl/release/pipe_downloader
             asset_name: pipe_downloader
             tag: ${{ github.ref }}
