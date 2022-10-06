@@ -45,4 +45,4 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: pipe_downloader
-          path: ./target/aarch64-unknown-linux-musl/release/pipe-downloader
+          path: ./target/aarch64-unknown-linux-musl/release/pipe_downloader
