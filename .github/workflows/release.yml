@@ -1,16 +1,9 @@
-name: Build for ARM
+name: Release for ARM
 
 on:
   push:
-    branches:
-      - main
-      - release/*
-      - scx1332/*
-  pull_request:
-    branches:
-      - main
-      - release/*
-
+    tags:
+      - v*
 
 jobs:
   build_arm:
@@ -42,7 +35,13 @@ jobs:
           args: --release --target aarch64-unknown-linux-musl
 
       - name: Upload
-        uses: actions/upload-artifact@v3
-        with:
+        uses: svenstaro/upload-release-action@v2
+          with:
+            repo_token: ${{ secrets.GITHUB_TOKEN }}
+            file: target/aarch64-unknown-linux-musl/release/pipe_downloader
+            asset_name: pipe_downloader
+            tag: ${{ github.ref }}
+            overwrite: true
+            body: "Binary for arm"
           name: pipe_downloader
-          path: ./target/aarch64-unknown-linux-musl/release/pipe_downloader
+
