@@ -1,21 +1,31 @@
-name: Release for ARM
+name: Release
 
 on:
-  push:
-    tags:
-      - v*
+  release:
+    types: [ published ]
 
 jobs:
-  build_arm:
-    name: Build Arm
-    env:
-      RUSTFLAGS: "-D warnings -C opt-level=z -C debuginfo=1"
-      X86_64_PC_WINDOWS_MSVC_OPENSSL_DIR: c:/vcpkg/installed/x64-windows
-    runs-on: ${{ matrix.os }}
+  build:
+    runs-on: ${{ matrix.build-on }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
-
+        include:
+          - cpu: x86_64
+            os: win
+            target: x86_64-pc-windows-msvc
+            build-on: windows-latest
+            use-cross: false
+          - cpu: x86_64
+            os: linux
+            target: x86_64-unknown-linux-musl
+            build-on: ubuntu-latest
+            use-cross: true
+          - cpu: aarch64
+            os: linux
+            target: aarch64-unknown-linux-musl
+            build-on: ubuntu-latest
+            use-cross: true
+    name: Build Release ${{ matrix.cpu }} ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v1
@@ -24,7 +34,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          target: aarch64-unknown-linux-musl
+          target: ${{ matrix.target }}
           override: true
 
       - name: Build binary
@@ -32,15 +42,14 @@ jobs:
         with:
           use-cross: true
           command: build
-          args: --release --target aarch64-unknown-linux-musl
+          args: --release --target ${{ matrix.target }}
 
       - name: Upload
         uses: svenstaro/upload-release-action@2.3.0
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: target/aarch64-unknown-linux-musl/release/pipe_downloader
-          asset_name: pipe_downloader_aarch64
+          file: target/${{ matrix.target }}/release/pipe_downloader
+          asset_name: pipe_downloader-${{ matrix.os }}-${{ matrix.cpu }}
           tag: ${{ github.ref }}
           overwrite: true
-          body: "Binary for arm"
-          
+          body: "Binary for ${{ matrix.cpu }} ${{ matrix.os }}"
