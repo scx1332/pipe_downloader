@@ -15,16 +15,19 @@ jobs:
             target: x86_64-pc-windows-msvc
             build-on: windows-latest
             use-cross: false
+            exe: ".exe"
           - cpu: x86_64
             os: linux
             target: x86_64-unknown-linux-musl
             build-on: ubuntu-latest
             use-cross: true
+            exe: ""
           - cpu: aarch64
             os: linux
             target: aarch64-unknown-linux-musl
             build-on: ubuntu-latest
             use-cross: true
+            exe: ""
     name: Build Release ${{ matrix.cpu }} ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -48,8 +51,8 @@ jobs:
         uses: svenstaro/upload-release-action@2.3.0
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: target/${{ matrix.target }}/release/pipe_downloader
-          asset_name: pipe_downloader-${{ matrix.os }}-${{ matrix.cpu }}
+          file: target/${{ matrix.target }}/release/pipe_downloader${{ matrix.exe }}
+          asset_name: pipe_downloader-${{ matrix.os }}-${{ matrix.cpu }}${{ matrix.exe }}
           tag: ${{ github.ref }}
           overwrite: true
           body: "Binary for ${{ matrix.cpu }} ${{ matrix.os }}"
