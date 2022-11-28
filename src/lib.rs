@@ -1,7 +1,9 @@
+mod options;
 mod pipe_downloader;
 mod pipe_progress;
 mod pipe_utils;
 mod pipe_wrapper;
 
-pub use pipe_downloader::*;
+pub use options::PipeDownloaderOptions;
+pub use pipe_downloader::PipeDownloader;
 pub use pipe_progress::PipeDownloaderProgress;
