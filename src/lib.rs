@@ -1,4 +1,3 @@
-mod lz4_decoder;
 mod pipe_downloader;
 mod pipe_progress;
 mod pipe_utils;

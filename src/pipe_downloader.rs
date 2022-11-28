@@ -11,7 +11,7 @@ use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
-use crate::lz4_decoder::Lz4Decoder;
+use lz4::Decoder as Lz4Decoder;
 
 use anyhow::anyhow;
 use bzip2::read::BzDecoder;
