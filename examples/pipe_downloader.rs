@@ -64,7 +64,6 @@ fn main() -> anyhow::Result<()> {
         force_no_chunks: opt.force_no_partial_content,
         download_threads: opt.download_threads,
     }
-    .apply_env()
     .start_download(&opt.url, &opt.output_dir)?;
 
     let current_time = std::time::Instant::now();
