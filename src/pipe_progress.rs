@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use serde_json::json;
+use serde::{Deserialize, Serialize};
 use std::ops::Div;
 
 #[derive(Debug, Clone)]
@@ -51,7 +51,7 @@ impl ProgressHistory {
         (total as f64 / elapsed_secs).round() as usize
     }
 
-    pub fn add_bytes(self: &mut Self, bytes: usize) {
+    pub fn add_bytes(&mut self, bytes: usize) {
         let current_time = chrono::Utc::now();
         if let Some(last_entry) = self.progress_entries.last_mut() {
             if current_time - last_entry.time < self.keep_time.div(self.max_entries as i32) {
@@ -61,7 +61,7 @@ impl ProgressHistory {
         }
         self.progress_entries.push(ProgressHistoryEntry {
             time: current_time,
-            bytes: bytes,
+            bytes,
         });
 
         //this should be removed max one time
@@ -83,9 +83,10 @@ impl ProgressHistory {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProgressContext {
+pub struct InternalProgress {
     pub start_time: chrono::DateTime<chrono::Utc>,
     pub unfinished_chunks: Vec<usize>,
+    pub total_chunks: usize,
     pub total_downloaded: usize,
     pub total_download_size: Option<usize>,
     pub chunk_downloaded: Vec<usize>,
@@ -103,11 +104,12 @@ pub struct ProgressContext {
     pub download_url: Option<String>,
 }
 
-impl Default for ProgressContext {
-    fn default() -> ProgressContext {
-        ProgressContext {
+impl Default for InternalProgress {
+    fn default() -> InternalProgress {
+        InternalProgress {
             start_time: chrono::Utc::now(),
             unfinished_chunks: vec![],
+            total_chunks: 0,
             total_download_size: None,
             total_downloaded: 0,
             chunk_downloaded: vec![],
@@ -127,30 +129,57 @@ impl Default for ProgressContext {
     }
 }
 
-impl ProgressContext {
-    pub fn to_json(&self) -> serde_json::Value {
-        json!({
-            "startTime": self.start_time.to_rfc3339(),
-            "downloaded": self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>(),
-            "unpacked": self.total_unpacked,
-            "stopRequested": self.stop_requested,
-            "paused": self.paused,
-            "elapsedTime": self.get_elapsed().num_milliseconds() as f64 / 1000.0,
-            "estimatedTimeLeft": self.get_time_left_sec(),
-            "finishTime": self.finish_time.map(|ft| ft.to_rfc3339()),
-            "currentDownloadSpeed": self.progress_buckets_download.get_speed(),
-            "currentUnpackSpeed": self.progress_buckets_unpack.get_speed(),
-            "errorMessage": self.error_message,
-            "errorMessageDownload": self.error_message_download,
-            "errorMessageUnpack": self.error_message_unpack,
-            "totalUnpackSize": self.total_unpack_size,
-            "totalDownloadSize": self.total_download_size,
-            "downloadUrl": self.download_url
-        })
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PipeDownloaderProgress {
+    pub start_time: chrono::DateTime<chrono::Utc>,
+    pub downloaded: usize,
+    pub unpacked: usize,
+    pub stop_requested: bool,
+    pub paused: bool,
+    pub elapsed_time_sec: f64,
+    pub eta_sec: Option<u64>,
+    pub finish_time: Option<chrono::DateTime<chrono::Utc>>,
+    pub current_download_speed: usize,
+    pub current_unpack_speed: usize,
+    pub error_message: Option<String>,
+    pub error_message_download: Option<String>,
+    pub error_message_unpack: Option<String>,
+    pub total_unpack_size: Option<usize>,
+    pub total_download_size: Option<usize>,
+    pub download_url: Option<String>,
+    pub chunks_downloading: usize,
+    pub chunks_total: usize,
+    pub chunks_left: usize,
+}
+
+impl InternalProgress {
+    pub fn progress(&self) -> PipeDownloaderProgress {
+        PipeDownloaderProgress {
+            start_time: self.start_time,
+            downloaded: self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>(),
+            unpacked: self.total_unpacked,
+            stop_requested: self.stop_requested,
+            paused: self.paused,
+            elapsed_time_sec: self.get_elapsed().num_milliseconds() as f64 / 1000.0,
+            eta_sec: self.get_time_left_sec(),
+            finish_time: self.finish_time,
+            current_download_speed: self.progress_buckets_download.get_speed(),
+            current_unpack_speed: self.progress_buckets_unpack.get_speed(),
+            error_message: self.error_message.clone(),
+            error_message_download: self.error_message_download.clone(),
+            error_message_unpack: self.error_message_unpack.clone(),
+            total_unpack_size: self.total_unpack_size,
+            total_download_size: self.total_download_size,
+            download_url: self.download_url.clone(),
+            chunks_downloading: self.chunk_downloaded.len(),
+            chunks_total: self.total_chunks,
+            chunks_left: self.unfinished_chunks.len(),
+        }
     }
 
     pub fn get_elapsed(&self) -> chrono::Duration {
-        self.finish_time.unwrap_or(chrono::Utc::now()) - self.start_time
+        self.finish_time.unwrap_or_else(chrono::Utc::now) - self.start_time
     }
 
     pub fn get_time_left_sec(&self) -> Option<u64> {

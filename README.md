@@ -15,11 +15,12 @@ but it uses multiple cores better than piped commands like above.
 Additionally, it provides progress, that can be used by server to provide API.
 Implementation is nonblocking, based on threads (no async IO used)
 
-It spawns 3 threads per download, one for downloading, 
-one for decompressing and one for untaring (writing files also). Simple mspc is used to cross thread data share 
-(no ring buffers or similar solution). Some unnecessary memory copying is still done, but it doesn't affect performance a lot.
+It spawns 3 or more threads per download, one or more for downloading, 
+one for decompressing and one for untaring (writing files also).
+It is using chunks, when chunks are filled with data they are gathered and
+when next chunk is full they are processed by unpacker.
 
-No unsafe code used for now.
+No unsafe code used.
 
 Currently, it supports:
 * archive.tar.lz4
@@ -34,7 +35,7 @@ which allows to continue operation when connection is lost (downloader waits pat
 Downloader also supports normal GET (200) download when server does not support PARTIAL_CONTENT, but any network timeout/disconnection will lead 
 to unrecoverable error then.
 
-Right now there is no option of restarting download after unrecoverable error or killed process.
+There is no option of restarting download after unrecoverable error or killed process.
 
 1. Cross compilation
 
