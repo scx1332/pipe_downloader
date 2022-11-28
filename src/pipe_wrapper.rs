@@ -84,6 +84,6 @@ impl Read for MpscReaderFromReceiver {
             starting_pos,
             self.pos - starting_pos
         );
-        return Ok(min_val);
+        Ok(min_val)
     }
 }

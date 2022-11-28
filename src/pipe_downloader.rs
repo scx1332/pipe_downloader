@@ -1,30 +1,30 @@
 use flate2::read::GzDecoder;
-use log;
 
-use reqwest::header::CONTENT_LENGTH;
-use reqwest::StatusCode;
 use std::fs::File;
-use std::io::Read;
-use std::path::PathBuf;
 
-use std::str::FromStr;
-use std::sync::mpsc::{sync_channel, SyncSender};
+use std::path::{Path, PathBuf};
+
+use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{thread, time};
 
-use crate::lz4_decoder::Lz4Decoder;
+use lz4::Decoder as Lz4Decoder;
 
-use anyhow::anyhow;
+use crate::options::PipeDownloaderOptions;
+
 use bzip2::read::BzDecoder;
 use lz4_flex::frame::FrameDecoder;
-use reqwest::blocking::Response;
-use std::time::Duration;
+
 use tar::Archive;
 
-use crate::pipe_progress::ProgressContext;
+use crate::pipe_engine::decode_loop;
+use crate::pipe_engine::download_loop;
+use crate::pipe_progress::InternalProgress;
 use crate::pipe_utils::bytes_to_human;
+use crate::pipe_utils::resolve_url;
 use crate::pipe_wrapper::{DataChunk, MpscReaderFromReceiver};
 use crate::tsutils::TimePair;
+use crate::PipeDownloaderProgress;
 
 #[derive(Debug, Clone)]
 pub struct PipeDownloaderOptions {
@@ -35,37 +35,11 @@ pub struct PipeDownloaderOptions {
     pub download_threads: usize,
 }
 
-impl Default for PipeDownloaderOptions {
-    fn default() -> Self {
-        Self {
-            chunk_size_downloader: 30_000_000,
-            chunk_size_decoder: 10_000_000,
-            max_download_speed: None,
-            force_no_chunks: false,
-            download_threads: 2,
-        }
-    }
-}
 
-impl PipeDownloaderOptions {
-    pub fn from_env() -> Self {
-        let mut options = Self::default();
-        if let Ok(download_buffer) = std::env::var("PIPE_DOWNLOADER_DOWNLOAD_BUFFER") {
-            options.chunk_size_downloader = usize::from_str(&download_buffer).unwrap();
-        }
-        if let Ok(decoder_buffer) = std::env::var("PIPE_DOWNLOADER_DECODER_BUFFER") {
-            options.chunk_size_decoder = usize::from_str(&decoder_buffer).unwrap();
-        }
-        if let Ok(download_threads) = std::env::var("PIPE_DOWNLOADER_DOWNLOAD_THREADS") {
-            options.download_threads = usize::from_str(&download_threads).unwrap();
-        }
-        options
-    }
-}
-
+/// Created from [PipeDownloaderOptions]
 pub struct PipeDownloader {
     url: String,
-    progress_context: Arc<Mutex<ProgressContext>>,
+    progress_context: Arc<Mutex<InternalProgress>>,
     options: PipeDownloaderOptions,
     download_started: bool,
     target_path: PathBuf,
@@ -73,167 +47,20 @@ pub struct PipeDownloader {
 }
 
 impl PipeDownloader {
-    pub fn new(
+    pub(crate) fn new(
         url: &str,
-        target_path: &PathBuf,
+        target_path: &Path,
         pipe_downloader_options: PipeDownloaderOptions,
     ) -> Self {
         Self {
             url: url.to_string(),
-            progress_context: Arc::new(Mutex::new(ProgressContext::default())),
+            progress_context: Arc::new(Mutex::new(InternalProgress::default())),
             download_started: false,
-            target_path: target_path.clone(),
+            target_path: target_path.to_path_buf(),
             thread_last_stage: None,
             options: pipe_downloader_options,
         }
     }
-}
-
-fn download_chunk(
-    thread_no: usize,
-    progress_context: Arc<Mutex<ProgressContext>>,
-    range: &std::ops::Range<usize>,
-    max_speed: Option<usize>,
-    response: &mut reqwest::blocking::Response,
-) -> anyhow::Result<Vec<u8>> {
-    let mut buf_vec: Vec<u8> = Vec::with_capacity(range.end - range.start);
-
-    let mut buf = vec![0; 1024 * 1024];
-    let mut total_downloaded: usize = 0;
-    let start_time = std::time::Instant::now();
-    loop {
-        let left_to_download = (range.end - range.start) - total_downloaded;
-        let max_buf_size = std::cmp::min(buf.len(), left_to_download);
-        if max_buf_size == 0 {
-            break;
-        }
-        let n = response.read(&mut buf[..max_buf_size])?;
-        if n == 0 {
-            return Err(anyhow!("Unexpected end of file"));
-        }
-        total_downloaded += n;
-
-        buf_vec.extend_from_slice(&buf[..n]);
-        {
-            let mut progress_context = progress_context.lock().unwrap();
-            if let Some(cd) = progress_context.chunk_downloaded.get_mut(thread_no) {
-                *cd += n;
-            }
-            progress_context.progress_buckets_download.add_bytes(n);
-            if progress_context.paused {
-                return Err(anyhow::anyhow!("Download paused"));
-            }
-            if progress_context.stop_requested {
-                return Err(anyhow::anyhow!("Stop requested"));
-            }
-        }
-        //Speed throttling is not perfect by any means, but it's good enough for now
-        if let Some(max_speed) = max_speed {
-            let should_take_time =
-                Duration::from_secs_f64(total_downloaded as f64 / max_speed as f64);
-            log::debug!("Should take time: {:?}", should_take_time);
-            loop {
-                let elapsed = std::time::Instant::now().duration_since(start_time);
-                if should_take_time > elapsed {
-                    std::thread::sleep(Duration::from_millis(1));
-                } else {
-                    break;
-                }
-            }
-        }
-    }
-    if buf_vec.len() != range.end - range.start {
-        return Err(anyhow::anyhow!(
-            "unexpected content length: {}",
-            buf_vec.len()
-        ));
-    }
-
-    log::debug!(
-        "Chunk downloaded: range {:?} / {}",
-        range,
-        range.end - range.start
-    );
-
-    return Ok(buf_vec);
-}
-
-fn request_chunk(
-    url: &str,
-    client: &reqwest::blocking::Client,
-    range: &std::ops::Range<usize>,
-) -> anyhow::Result<Response> {
-    log::debug!(
-        "Downloading chunk: range {:?} / {}",
-        range,
-        range.end - range.start
-    );
-
-    let header = format!("bytes={}-{}", range.start, range.end - 1);
-    let response = client.get(url).header("Range", header).send()?;
-
-    let status = response.status();
-    let content_length = response
-        .headers()
-        .get("Content-Length")
-        .ok_or(anyhow::anyhow!("Content-Length header not found"))?
-        .to_str()?;
-    let content_length = usize::from_str(content_length)?;
-
-    if status == StatusCode::OK && range.start != 0 {
-        return Err(anyhow::anyhow!(
-            "Seems like server does not support partial content: {}",
-            status
-        ));
-    }
-    if status != StatusCode::PARTIAL_CONTENT && range.start != 0 {
-        return Err(anyhow::anyhow!("unexpected status code: {}", status));
-    } else {
-        log::info!(
-            "Received status: {:?}, starting downloading chunk data...",
-            status
-        );
-    }
-    if content_length != range.end - range.start {
-        return Err(anyhow::anyhow!(
-            "unexpected content length: {}",
-            content_length
-        ));
-    }
-    Ok(response)
-}
-
-fn decode_loop<T: Read>(
-    progress_context: Arc<Mutex<ProgressContext>>,
-    options: &PipeDownloaderOptions,
-    decoder: &mut T,
-    send: std::sync::mpsc::SyncSender<DataChunk>,
-) -> anyhow::Result<()> {
-    let mut unpacked_size = 0;
-    loop {
-        let mut buf = vec![0u8; options.chunk_size_decoder];
-        let bytes_read = match decoder.read(&mut buf) {
-            Ok(bytes_read) => bytes_read,
-            Err(err) => {
-                log::error!("Error while reading from decoder {:?}", err);
-                return Err(anyhow::anyhow!(
-                    "Error while reading from decoder {:?}",
-                    err
-                ));
-            }
-        };
-        if bytes_read == 0 {
-            break;
-        }
-        unpacked_size += bytes_read;
-        {
-            let mut progress = progress_context.lock().unwrap();
-            progress.total_unpacked = unpacked_size;
-            progress.progress_buckets_unpack.add_bytes(bytes_read);
-            if progress.stop_requested {
-                break;
-            }
-        }
 
         log::debug!(
             "Decode loop, Unpacked size: {}",
@@ -595,6 +422,8 @@ impl PipeDownloader {
     }
 
     pub fn start_download(self: &mut PipeDownloader) -> anyhow::Result<()> {
+    /// Process inputs and try to start download
+    pub(crate) fn start_download(self: &mut PipeDownloader) -> anyhow::Result<()> {
         if self.download_started {
             return Err(anyhow::anyhow!("Download already started"));
         }
@@ -682,7 +511,7 @@ impl PipeDownloader {
         let mut p2 = MpscReaderFromReceiver::new(receive_unpack_chunks, false);
 
         let target_path = self.target_path.clone();
-        let download_url = url.clone();
+        let download_url = url;
 
         let pc = self.progress_context.clone();
         self.thread_last_stage = Some(thread::spawn(move || {
@@ -741,5 +570,96 @@ impl PipeDownloader {
         }));
 
         Ok(())
+    }
+
+    /// Returns serializable [PipeDownloaderProgress] object
+    pub fn get_progress(self: &PipeDownloader) -> PipeDownloaderProgress {
+        self.get_progress_guard().progress()
+    }
+
+    /// Returns progress as human readable line
+    pub fn get_progress_human_line(self: &PipeDownloader) -> String {
+        let progress = self.get_progress_guard();
+
+        let eta_string = if let Some(eta) = progress.get_time_left_sec() {
+            let seconds = eta % 60;
+            let minutes = (eta / 60) % 60;
+            let hours = (eta / 60) / 60;
+            format!("ETA: {:02}:{:02}:{:02}", hours, minutes, seconds)
+        } else {
+            "ETA: unknown".to_string()
+        };
+        let percent_string = if let Some(total_length) = progress.total_download_size {
+            format!(
+                "[{:.2}%]",
+                ((progress.total_downloaded + progress.chunk_downloaded.iter().sum::<usize>())
+                    as f64
+                    / total_length as f64)
+                    * 100.0
+            )
+        } else {
+            "".to_string()
+        };
+
+        format!(
+            "Downloaded: {} [{}/s now: {}/s], Unpack: {} [{}/s now: {}/s] - {} {}",
+            bytes_to_human(
+                progress.total_downloaded + progress.chunk_downloaded.iter().sum::<usize>()
+            ),
+            bytes_to_human(progress.get_download_speed()),
+            bytes_to_human(progress.progress_buckets_download.get_speed()),
+            bytes_to_human(progress.total_unpacked),
+            bytes_to_human(progress.get_unpack_speed()),
+            bytes_to_human(progress.progress_buckets_unpack.get_speed()),
+            eta_string,
+            percent_string
+        )
+    }
+
+    /// Cancel download
+    pub fn signal_stop(self: &PipeDownloader) {
+        let mut pc = self
+            .progress_context
+            .lock()
+            .expect("Failed to lock progress context");
+        pc.stop_requested = true;
+    }
+
+    ///Downloader supports pausing and resuming, you can call this method to pause download
+    pub fn pause_download(self: &PipeDownloader) {
+        let mut pc = self
+            .progress_context
+            .lock()
+            .expect("Failed to lock progress context");
+        pc.paused = true;
+    }
+
+    ///Downloader supports pausing and resuming, you can call this method to resume download
+    pub fn resume_download(self: &PipeDownloader) {
+        let mut pc = self
+            .progress_context
+            .lock()
+            .expect("Failed to lock progress context");
+        pc.paused = false;
+    }
+
+    /// Check if download is finished
+    pub fn is_finished(self: &PipeDownloader) -> bool {
+        if let Some(thread_last_stage) = self.thread_last_stage.as_ref() {
+            thread_last_stage.is_finished()
+        } else {
+            false
+        }
+    }
+
+    fn get_progress_guard(self: &PipeDownloader) -> MutexGuard<InternalProgress> {
+        self.progress_context
+            .lock()
+            .expect("Failed to lock progress context")
+    }
+
+    /// Check if download is started
+    pub fn is_started(self: &PipeDownloader) -> bool {
+        self.download_started
     }
 }
