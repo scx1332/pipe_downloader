@@ -41,3 +41,6 @@ There is no option of restarting download after unrecoverable error or killed pr
 
 ```cross build --release --target aarch64-unknown-linux-musl```
 
+2. Test runs
+
+```cargo run --release --example pipe_downloader -- --output-dir linux-6.0.4 --url=https://mirrors.edge.kernel.org/pub/linux/kernel/v6.x/linux-6.0.4.tar.gz```

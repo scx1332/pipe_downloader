@@ -38,8 +38,8 @@ struct Opt {
     unpack_buffer: usize,
 
     /// Set output in json format (default is human readable)
-    #[structopt(long = "json-output")]
-    json_output: bool,
+    #[structopt(long = "json")]
+    json: bool,
 
     /// For debugging purposes
     #[structopt(long = "run-after-finish")]
@@ -67,7 +67,7 @@ fn main() -> anyhow::Result<()> {
 
     let current_time = std::time::Instant::now();
     loop {
-        if opt.json_output {
+        if opt.json {
             println!(
                 "{}",
                 serde_json::to_string_pretty(&pd.get_progress_json()).unwrap()
