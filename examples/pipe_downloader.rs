@@ -1,19 +1,13 @@
-mod lz4_decoder;
-mod pipe_downloader;
-mod pipe_progress;
-mod pipe_utils;
-mod pipe_wrapper;
-
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
-use crate::pipe_downloader::{PipeDownloader, PipeDownloaderOptions};
+use pipe_downloader::{PipeDownloader, PipeDownloaderOptions};
 
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "example", about = "An example of StructOpt usage.")]
+#[structopt(name = "example", about = "Options for pipe downloader")]
 struct Opt {
     /// Url of tar.gz or tar.lz4 file
     #[structopt(long = "url")]

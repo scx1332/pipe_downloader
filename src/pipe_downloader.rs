@@ -508,7 +508,7 @@ impl PipeDownloader {
         pc.stop_requested = true;
     }
 
-    #[allow(unused)]
+    
     pub fn pause_download(self: &PipeDownloader) {
         let mut pc = self
             .progress_context
@@ -517,7 +517,7 @@ impl PipeDownloader {
         pc.paused = true;
     }
 
-    #[allow(unused)]
+    
     pub fn resume_download(self: &PipeDownloader) {
         let mut pc = self
             .progress_context
@@ -540,7 +540,7 @@ impl PipeDownloader {
             .expect("Failed to lock progress context")
     }
 
-    #[allow(unused)]
+    
     pub fn get_progress(self: &PipeDownloader) -> ProgressContext {
         self.get_progress_guard().clone()
     }
@@ -587,7 +587,7 @@ impl PipeDownloader {
         )
     }
 
-    #[allow(unused)]
+    
     pub fn is_started(self: &PipeDownloader) -> bool {
         self.download_started
     }
