@@ -2,12 +2,15 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
-use pipe_downloader::{PipeDownloaderOptions};
+use pipe_downloader::PipeDownloaderOptions;
 
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "Pipe downloader", about = "Fast multithreaded downloader for tar.lz4, tar.gz, tar.bz2 files")]
+#[structopt(
+    name = "Pipe downloader",
+    about = "Fast multithreaded downloader for tar.lz4, tar.gz, tar.bz2 files"
+)]
 struct Opt {
     /// Url of tar.gz or tar.lz4 file
     #[structopt(long = "url")]
@@ -54,23 +57,21 @@ fn main() -> anyhow::Result<()> {
     env_logger::init();
     let opt: Opt = Opt::from_args();
 
-    let mut pd = PipeDownloaderOptions {
+    let pd = PipeDownloaderOptions {
         chunk_size_decoder: opt.unpack_buffer,
         chunk_size_downloader: opt.download_buffer,
         max_download_speed: opt.limit_speed,
         force_no_chunks: opt.force_no_partial_content,
         download_threads: opt.download_threads,
     }
-    .apply_env()
-    .create_downloader(&opt.url, &opt.output_dir);
-    pd.start_download()?;
+    .start_download(&opt.url, &opt.output_dir)?;
 
     let current_time = std::time::Instant::now();
     loop {
         if opt.json {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&pd.get_progress_json()).unwrap()
+                serde_json::to_string_pretty(&pd.get_progress()).unwrap()
             )
         } else {
             println!("{}", pd.get_progress_human_line());
