@@ -47,8 +47,8 @@ impl Default for PipeDownloaderOptions {
 }
 
 impl PipeDownloaderOptions {
-    pub fn from_env() -> Self {
-        let mut options = Self::default();
+    pub fn apply_env(self) -> Self {
+        let mut options = self;
         if let Ok(download_buffer) = std::env::var("PIPE_DOWNLOADER_DOWNLOAD_BUFFER") {
             options.chunk_size_downloader = usize::from_str(&download_buffer).unwrap();
         }
@@ -59,6 +59,10 @@ impl PipeDownloaderOptions {
             options.download_threads = usize::from_str(&download_threads).unwrap();
         }
         options
+    }
+
+    pub fn create_downloader(self, url: &str, target_path: &Path) -> PipeDownloader {
+        PipeDownloader::new(url, target_path, self)
     }
 }
 
@@ -283,8 +287,12 @@ fn download_loop(
     let total_length = match response
         .headers()
         .get(CONTENT_LENGTH)
-        .ok_or_else(|| anyhow!("response doesn't include the content length")) {
-        Ok(length) => Some(usize::from_str(length.to_str()?).map_err(|_| anyhow!("invalid Content-Length header"))?),
+        .ok_or_else(|| anyhow!("response doesn't include the content length"))
+    {
+        Ok(length) => Some(
+            usize::from_str(length.to_str()?)
+                .map_err(|_| anyhow!("invalid Content-Length header"))?,
+        ),
         Err(_) => {
             log::warn!("Content-Length header not found, continue download without knowledge about file size...");
             use_chunks = false;
@@ -294,13 +302,19 @@ fn download_loop(
 
     progress_context.lock().unwrap().total_download_size = total_length;
 
-    if total_length.map(|total_length| total_length == 0).unwrap_or(false) {
+    if total_length
+        .map(|total_length| total_length == 0)
+        .unwrap_or(false)
+    {
         return Err(anyhow::anyhow!(
             "Content-Length is 0, empty files not supported"
         ));
     }
 
-    if total_length.map(|total_length| total_length < 10000).unwrap_or(false) {
+    if total_length
+        .map(|total_length| total_length < 10000)
+        .unwrap_or(false)
+    {
         log::info!("Single request mode");
         use_chunks = false;
     }
@@ -524,7 +538,6 @@ impl PipeDownloader {
         pc.stop_requested = true;
     }
 
-    
     pub fn pause_download(self: &PipeDownloader) {
         let mut pc = self
             .progress_context
@@ -533,7 +546,6 @@ impl PipeDownloader {
         pc.paused = true;
     }
 
-    
     pub fn resume_download(self: &PipeDownloader) {
         let mut pc = self
             .progress_context
@@ -556,7 +568,7 @@ impl PipeDownloader {
             .expect("Failed to lock progress context")
     }
 
-    pub fn get_progress_json(self: &PipeDownloader) -> PipeDownloaderProgress{
+    pub fn get_progress_json(self: &PipeDownloader) -> PipeDownloaderProgress {
         self.get_progress_guard().progress()
     }
 
@@ -598,7 +610,6 @@ impl PipeDownloader {
         )
     }
 
-    
     pub fn is_started(self: &PipeDownloader) -> bool {
         self.download_started
     }

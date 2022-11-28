@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
-use std::ops::Div;
 use serde::{Deserialize, Serialize};
+use std::ops::Div;
 
 #[derive(Debug, Clone)]
 pub struct ProgressHistoryEntry {
