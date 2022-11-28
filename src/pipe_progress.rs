@@ -1,5 +1,4 @@
 use chrono::{Duration, Utc};
-use serde_json::json;
 use std::ops::Div;
 use serde::{Deserialize, Serialize};
 
@@ -150,7 +149,7 @@ pub struct PipeDownloaderProgress {
 }
 
 impl InternalProgress {
-    pub fn to_json(&self) -> serde_json::Value {
+    pub fn progress(&self) -> PipeDownloaderProgress {
         PipeDownloaderProgress {
             start_time: self.start_time,
             downloaded: self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>(),
@@ -167,26 +166,8 @@ impl InternalProgress {
             error_message_unpack: self.error_message_unpack.clone(),
             total_unpack_size: self.total_unpack_size,
             total_download_size: self.total_download_size,
-            download_url: self.download_url.clone()
-        };
-        json!({
-            "startTime": self.start_time.to_rfc3339(),
-            "downloaded": self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>(),
-            "unpacked": self.total_unpacked,
-            "stopRequested": self.stop_requested,
-            "paused": self.paused,
-            "elapsedTime": self.get_elapsed().num_milliseconds() as f64 / 1000.0,
-            "estimatedTimeLeft": self.get_time_left_sec(),
-            "finishTime": self.finish_time.map(|ft| ft.to_rfc3339()),
-            "currentDownloadSpeed": self.progress_buckets_download.get_speed(),
-            "currentUnpackSpeed": self.progress_buckets_unpack.get_speed(),
-            "errorMessage": self.error_message,
-            "errorMessageDownload": self.error_message_download,
-            "errorMessageUnpack": self.error_message_unpack,
-            "totalUnpackSize": self.total_unpack_size,
-            "totalDownloadSize": self.total_download_size,
-            "downloadUrl": self.download_url
-        })
+            download_url: self.download_url.clone(),
+        }
     }
 
     pub fn get_elapsed(&self) -> chrono::Duration {

@@ -23,6 +23,7 @@ use tar::Archive;
 use crate::pipe_progress::InternalProgress;
 use crate::pipe_utils::bytes_to_human;
 use crate::pipe_wrapper::{DataChunk, MpscReaderFromReceiver};
+use crate::PipeDownloaderProgress;
 
 #[derive(Debug, Clone)]
 pub struct PipeDownloaderOptions {
@@ -554,8 +555,8 @@ impl PipeDownloader {
             .expect("Failed to lock progress context")
     }
 
-    pub fn get_progress_json(self: &PipeDownloader) -> serde_json::Value {
-        self.get_progress_guard().to_json()
+    pub fn get_progress_json(self: &PipeDownloader) -> PipeDownloaderProgress{
+        self.get_progress_guard().progress()
     }
 
     pub fn get_progress_human_line(self: &PipeDownloader) -> String {
