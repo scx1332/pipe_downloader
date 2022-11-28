@@ -1,6 +1,6 @@
 [package]
 name = "pipe_downloader"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "Fast downloader + extractor for *.tar.gz, *tar.lz4 and *.tar.bz2 files."
 
