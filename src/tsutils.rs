@@ -1,4 +1,5 @@
-use chrono::TimeZone;
+use anyhow::anyhow;
+use chrono::{DateTime, TimeZone, Utc};
 use std::fmt::{Debug, Formatter};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -25,6 +26,16 @@ impl TimePair {
             .timestamp_millis_opt(diff.as_millis().try_into().ok()?)
             .single()?;
         Some(ts.to_rfc3339())
+    }
+
+    pub fn to_utc(&self) -> anyhow::Result<DateTime<Utc>> {
+        let diff = self.system.duration_since(UNIX_EPOCH)?;
+        let ts = chrono::Utc
+            .timestamp_millis_opt(diff.as_millis().try_into()?)
+            .earliest()
+            .ok_or_else(|| anyhow!("invalid ts"))?;
+
+        Ok(ts)
     }
 }
 

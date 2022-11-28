@@ -1,5 +1,6 @@
 use crate::tsutils::TimePair;
-use serde_json::json;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std::time;
 use std::time::Instant;
 
@@ -53,7 +54,7 @@ impl ProgressHistory {
         (total as f64 / elapsed_secs.as_secs_f64()).round() as usize
     }
 
-    pub fn add_bytes(self: &mut Self, bytes: usize) {
+    pub fn add_bytes(&mut self, bytes: usize) {
         let current_time = time::Instant::now();
         if let Some(last_entry) = self.progress_entries.last_mut() {
             if current_time - last_entry.time < (self.keep_time / (self.max_entries as u32)) {
@@ -131,8 +132,8 @@ impl Default for InternalProgress {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(rename_all = "camelCase"))]
+#[derive(Debug, Clone, Default)]
 pub struct PipeDownloaderProgress {
     pub start_time: chrono::DateTime<chrono::Utc>,
     pub downloaded: usize,
@@ -158,14 +159,14 @@ pub struct PipeDownloaderProgress {
 impl InternalProgress {
     pub fn progress(&self) -> PipeDownloaderProgress {
         PipeDownloaderProgress {
-            start_time: self.start_time,
+            start_time: self.start_time.to_utc().unwrap(),
             downloaded: self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>(),
             unpacked: self.total_unpacked,
             stop_requested: self.stop_requested,
             paused: self.paused,
-            elapsed_time_sec: self.get_elapsed().num_milliseconds() as f64 / 1000.0,
+            elapsed_time_sec: self.get_elapsed().as_secs_f64(),
             eta_sec: self.get_time_left_sec(),
-            finish_time: self.finish_time,
+            finish_time: self.finish_time.as_ref().and_then(|ts| ts.to_utc().ok()),
             current_download_speed: self.progress_buckets_download.get_speed(),
             current_unpack_speed: self.progress_buckets_unpack.get_speed(),
             error_message: self.error_message.clone(),
@@ -184,7 +185,7 @@ impl InternalProgress {
         self.finish_time
             .as_ref()
             .map(|t| t.as_ts())
-            .unwrap_or(Instant::now())
+            .unwrap_or_else(|| Instant::now())
             - self.start_time.as_ts()
     }
 
