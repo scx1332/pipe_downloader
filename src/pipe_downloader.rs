@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::thread;
+use std::{thread, time};
 
 use crate::lz4_decoder::Lz4Decoder;
 
@@ -24,6 +24,7 @@ use tar::Archive;
 use crate::pipe_progress::ProgressContext;
 use crate::pipe_utils::bytes_to_human;
 use crate::pipe_wrapper::{DataChunk, MpscReaderFromReceiver};
+use crate::tsutils::TimePair;
 
 #[derive(Debug, Clone)]
 pub struct PipeDownloaderOptions {
@@ -542,7 +543,6 @@ impl PipeDownloader {
             .expect("Failed to lock progress context")
     }
 
-    #[allow(unused)]
     pub fn get_progress(self: &PipeDownloader) -> ProgressContext {
         self.get_progress_guard().clone()
     }
@@ -601,7 +601,7 @@ impl PipeDownloader {
         self.progress_context
             .lock()
             .expect("Failed to obtain lock")
-            .start_time = chrono::Utc::now();
+            .start_time = TimePair::now();
         self.download_started = true;
         let url = self.url.clone();
         //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
@@ -726,7 +726,7 @@ impl PipeDownloader {
                         t1.join().unwrap();
                     }
                     t2.join().unwrap();
-                    pc.lock().unwrap().finish_time = Some(chrono::Utc::now());
+                    pc.lock().unwrap().finish_time = Some(TimePair::now());
                 }
                 Err(err) => {
                     pc.lock().unwrap().error_message = Some(format!("{:?}", err));
@@ -735,7 +735,7 @@ impl PipeDownloader {
                         t1.join().unwrap();
                     }
                     t2.join().unwrap();
-                    pc.lock().unwrap().error_time = Some(chrono::Utc::now());
+                    pc.lock().unwrap().error_time = Some(time::Instant::now());
                 }
             }
         }));

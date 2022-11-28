@@ -3,26 +3,25 @@ name = "pipe_downloader"
 version = "0.3.5"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default=[]
+https = ["reqwest/native-tls-vendored"]
 
 [dependencies]
 hyper = "0.14.20"
-reqwest = {version="0.11.12", default-features=false, features=["blocking", "rustls-tls"]}
+reqwest = {version="0.11.12", default-features=false, features=["blocking"]}
 anyhow = "1.0.51"
 lz4 = "^1.24.0"
 libc = "^0.2.108"
-rand = "^0.8.4"
-structopt = "^0.3.25"
 log = "0.4.17"
-env_logger = "0.9.1"
 flate2 = "1.0.24"
 tar = "0.4.38"
-lazy_static = "1.4.0"
 human_bytes = "0.3.1"
 bzip2 = "0.4.3"
 serde_json = "1.0"
-chrono = { version="0.4.22", features=["serde"] }
 lz4_flex = "0.9.5"
-
+chrono = { version="0.4.23", default-features=false, features=["std"] }
 
 [dev-dependencies]
+env_logger = "0.9.1"
+structopt = "^0.3.25"
