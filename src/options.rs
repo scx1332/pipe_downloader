@@ -1,6 +1,7 @@
 use crate::PipeDownloader;
 use std::path::Path;
 
+/// Pipe Downloader Options.
 #[derive(Debug, Clone)]
 pub struct PipeDownloaderOptions {
     /// Size of download buffer in bytes, if memory is an issue, reduce this value
@@ -32,6 +33,7 @@ impl Default for PipeDownloaderOptions {
 }
 
 impl PipeDownloaderOptions {
+    /// Constructs downloader from given options.
     pub fn start_download(self, url: &str, target_path: &Path) -> anyhow::Result<PipeDownloader> {
         let mut pd = PipeDownloader::new(url, target_path, self);
         pd.start_download()?;

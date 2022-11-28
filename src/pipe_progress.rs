@@ -1,24 +1,26 @@
-use chrono::{Duration, Utc};
+use crate::tsutils::TimePair;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std::ops::Div;
+use std::time;
+use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct ProgressHistoryEntry {
-    time: chrono::DateTime<Utc>,
+    time: time::Instant,
     bytes: usize,
 }
 #[derive(Debug, Clone)]
 pub struct ProgressHistory {
     progress_entries: Vec<ProgressHistoryEntry>,
     max_entries: usize,
-    keep_time: Duration,
+    keep_time: time::Duration,
 }
 impl Default for ProgressHistory {
     fn default() -> Self {
         Self {
             progress_entries: Vec::new(),
             max_entries: 10,
-            keep_time: Duration::seconds(1),
+            keep_time: time::Duration::from_secs(1),
         }
     }
 }
@@ -27,13 +29,13 @@ impl ProgressHistory {
         ProgressHistory {
             progress_entries: vec![],
             max_entries: 50,
-            keep_time: Duration::seconds(10),
+            keep_time: time::Duration::from_secs(10),
         }
     }
 
     pub fn get_speed(&self) -> usize {
         //log::warn!("First enty from {}", self.progress_entries.get(0).map(|entry| std::time::Instant::now() - entry.time).unwrap_or());
-        let current_time = chrono::Utc::now();
+        let current_time = time::Instant::now();
         let mut last_time = current_time - self.keep_time;
         let mut total: usize = 0;
         //let now = std::time::Instant::now();
@@ -44,17 +46,18 @@ impl ProgressHistory {
             total += entry.bytes;
             last_time = entry.time;
         }
-        let elapsed_secs = (chrono::Utc::now() - last_time).num_milliseconds() as f64 / 1000.0;
+        let elapsed_secs = time::Instant::now() - last_time;
+        //let elapsed_secs = time::Instant::now - last_time (chrono::Utc::now() - last_time).num_milliseconds() as f64 / 1000.0;
         log::trace!("Progress entries count {}", self.progress_entries.len());
-        log::trace!("Last entry: {}", elapsed_secs);
+        log::trace!("Last entry: {:?}", elapsed_secs);
 
-        (total as f64 / elapsed_secs).round() as usize
+        (total as f64 / elapsed_secs.as_secs_f64()).round() as usize
     }
 
     pub fn add_bytes(&mut self, bytes: usize) {
-        let current_time = chrono::Utc::now();
+        let current_time = time::Instant::now();
         if let Some(last_entry) = self.progress_entries.last_mut() {
-            if current_time - last_entry.time < self.keep_time.div(self.max_entries as i32) {
+            if current_time - last_entry.time < (self.keep_time / (self.max_entries as u32)) {
                 last_entry.bytes += bytes;
                 return;
             }
@@ -84,7 +87,7 @@ impl ProgressHistory {
 
 #[derive(Debug, Clone)]
 pub struct InternalProgress {
-    pub start_time: chrono::DateTime<chrono::Utc>,
+    pub start_time: TimePair,
     pub unfinished_chunks: Vec<usize>,
     pub total_chunks: usize,
     pub total_downloaded: usize,
@@ -96,8 +99,8 @@ pub struct InternalProgress {
     pub paused: bool,
     pub progress_buckets_download: ProgressHistory,
     pub progress_buckets_unpack: ProgressHistory,
-    pub finish_time: Option<chrono::DateTime<chrono::Utc>>,
-    pub error_time: Option<chrono::DateTime<chrono::Utc>>,
+    pub finish_time: Option<TimePair>,
+    pub error_time: Option<time::Instant>,
     pub error_message_download: Option<String>,
     pub error_message_unpack: Option<String>,
     pub error_message: Option<String>,
@@ -107,7 +110,7 @@ pub struct InternalProgress {
 impl Default for InternalProgress {
     fn default() -> InternalProgress {
         InternalProgress {
-            start_time: chrono::Utc::now(),
+            start_time: TimePair::now(),
             unfinished_chunks: vec![],
             total_chunks: 0,
             total_download_size: None,
@@ -129,8 +132,8 @@ impl Default for InternalProgress {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(rename_all = "camelCase"))]
+#[derive(Debug, Clone, Default)]
 pub struct PipeDownloaderProgress {
     pub start_time: chrono::DateTime<chrono::Utc>,
     pub downloaded: usize,
@@ -156,14 +159,14 @@ pub struct PipeDownloaderProgress {
 impl InternalProgress {
     pub fn progress(&self) -> PipeDownloaderProgress {
         PipeDownloaderProgress {
-            start_time: self.start_time,
+            start_time: self.start_time.to_utc().unwrap(),
             downloaded: self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>(),
             unpacked: self.total_unpacked,
             stop_requested: self.stop_requested,
             paused: self.paused,
-            elapsed_time_sec: self.get_elapsed().num_milliseconds() as f64 / 1000.0,
+            elapsed_time_sec: self.get_elapsed().as_secs_f64(),
             eta_sec: self.get_time_left_sec(),
-            finish_time: self.finish_time,
+            finish_time: self.finish_time.as_ref().and_then(|ts| ts.to_utc().ok()),
             current_download_speed: self.progress_buckets_download.get_speed(),
             current_unpack_speed: self.progress_buckets_unpack.get_speed(),
             error_message: self.error_message.clone(),
@@ -178,8 +181,12 @@ impl InternalProgress {
         }
     }
 
-    pub fn get_elapsed(&self) -> chrono::Duration {
-        self.finish_time.unwrap_or_else(chrono::Utc::now) - self.start_time
+    pub fn get_elapsed(&self) -> time::Duration {
+        self.finish_time
+            .as_ref()
+            .map(|t| t.as_ts())
+            .unwrap_or_else(|| Instant::now())
+            - self.start_time.as_ts()
     }
 
     pub fn get_time_left_sec(&self) -> Option<u64> {
@@ -205,11 +212,11 @@ impl InternalProgress {
             return 0;
         }
         let elapsed = self.get_elapsed();
-        if elapsed.num_milliseconds() == 0 {
+        if elapsed.is_zero() {
             return 0;
         }
         let res_f64 = (self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>()) as f64
-            / (elapsed.num_milliseconds() as f64 / 1000.0);
+            / elapsed.as_secs_f64();
         res_f64.round() as usize
     }
     pub fn get_unpack_speed(&self) -> usize {
@@ -217,10 +224,10 @@ impl InternalProgress {
             return 0;
         }
         let elapsed = self.get_elapsed();
-        if elapsed.num_milliseconds() == 0 {
+        if elapsed.is_zero() {
             return 0;
         }
-        let speed_f64 = (self.total_unpacked) as f64 / (elapsed.num_milliseconds() as f64 / 1000.0);
+        let speed_f64 = (self.total_unpacked) as f64 / elapsed.as_secs_f64();
         speed_f64.round() as usize
     }
 }

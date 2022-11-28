@@ -7,12 +7,16 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
+use std::time::Instant;
 
+#[cfg(all(feature = "with-lz4", not(feature = "lz4-rust")))]
 use lz4::Decoder as Lz4Decoder;
 
 use crate::options::PipeDownloaderOptions;
 
 use bzip2::read::BzDecoder;
+
+#[cfg(feature = "lz4-rust")]
 use lz4_flex::frame::FrameDecoder;
 
 use tar::Archive;
@@ -23,6 +27,7 @@ use crate::pipe_progress::InternalProgress;
 use crate::pipe_utils::bytes_to_human;
 use crate::pipe_utils::resolve_url;
 use crate::pipe_wrapper::{DataChunk, MpscReaderFromReceiver};
+use crate::tsutils::TimePair;
 use crate::PipeDownloaderProgress;
 
 /// Created from [PipeDownloaderOptions]
@@ -59,7 +64,7 @@ impl PipeDownloader {
         self.progress_context
             .lock()
             .expect("Failed to obtain lock")
-            .start_time = chrono::Utc::now();
+            .start_time = TimePair::now();
         self.download_started = true;
         let url = self.url.clone();
         //let url = "https://github.com/golemfactory/ya-runtime-http-auth/releases/download/v0.1.0/ya-runtime-http-auth-linux-v0.1.0.tar.gz";
@@ -115,12 +120,14 @@ impl PipeDownloader {
             let res = if download_url.ends_with(".gz") {
                 let mut gz = GzDecoder::new(&mut p);
                 decode_loop(pc.clone(), &options, &mut gz, send_unpack_chunks)
-            } else if download_url.ends_with(".lz4-rust") {
-                //rust implementation is slower - you can test that renaming source file from .lz4 to .lz4-rust
-                let mut lz4 = FrameDecoder::new(&mut p);
-                decode_loop(pc.clone(), &options, &mut lz4, send_unpack_chunks)
             } else if download_url.ends_with(".lz4") {
+                #[cfg(feature = "lz4-rust")]
+                let mut lz4 = FrameDecoder::new(&mut p);
+                #[cfg(all(feature = "with-lz4", not(feature = "lz4-rust")))]
                 let mut lz4 = Lz4Decoder::new(&mut p).unwrap();
+                #[cfg(not(any(feature = "lz4-rust", feature = "with-lz4")))]
+                panic!("lz4 is not supported");
+                #[cfg(any(feature = "lz4-rust", feature = "with-lz4"))]
                 decode_loop(pc.clone(), &options, &mut lz4, send_unpack_chunks)
             } else if download_url.ends_with(".bz2") {
                 let mut bz2 = BzDecoder::new(&mut p);
@@ -184,7 +191,7 @@ impl PipeDownloader {
                         t1.join().unwrap();
                     }
                     t2.join().unwrap();
-                    pc.lock().unwrap().finish_time = Some(chrono::Utc::now());
+                    pc.lock().unwrap().finish_time = Some(TimePair::now());
                 }
                 Err(err) => {
                     pc.lock().unwrap().error_message = Some(format!("{:?}", err));
@@ -193,7 +200,7 @@ impl PipeDownloader {
                         t1.join().unwrap();
                     }
                     t2.join().unwrap();
-                    pc.lock().unwrap().error_time = Some(chrono::Utc::now());
+                    pc.lock().unwrap().error_time = Some(Instant::now());
                 }
             }
         }));

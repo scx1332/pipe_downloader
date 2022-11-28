@@ -6,23 +6,32 @@ description = "Fast downloader + extractor for *.tar.gz, *tar.lz4 and *.tar.bz2 
 license = "MIT"
 
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default=["serde"]
+https = ["reqwest/rustls-tls"]
+with-lz4 = ["lz4"]
+lz4-rust = ["lz4_flex"]
+serde = ["dep:serde"]
 
 [dependencies]
-reqwest = {version="0.11.12", default-features=false, features=["blocking", "rustls-tls"]}
+reqwest = {version="0.11.12", default-features=false, features=["blocking"]}
 anyhow = "1.0.51"
-lz4 = "^1.24.0"
+lz4 = { version = "^1.24.0", optional = true}
 log = "0.4.17"
 flate2 = "1.0.24"
 tar = "0.4.38"
 humansize = {version="2.1.2",  default-features=false, features=["no_alloc"]}
 bzip2 = "0.4.3"
-serde = {version="1.0", features=["derive"]}
-serde_json = "1.0"
-chrono = { version="^0.4.22", features=["serde"] }
-lz4_flex = "^0.9.5"
+serde = { version="1.0", features=["derive"], optional = true }
+lz4_flex = { version = "^0.9.5", optional = true}
+chrono = { version="0.4.23", default-features=false, features=["std", "serde"] }
 
 [dev-dependencies]
-env_logger = "^0.10.0"
-structopt = "^0.3.25"
+serde_json = "1.0.89"
+structopt = "0.3.26"
+env_logger = "0.10.0"
 
+
+[profile.release]
+lto = true
+strip = true
