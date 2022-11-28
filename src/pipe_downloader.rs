@@ -61,8 +61,10 @@ impl PipeDownloaderOptions {
         options
     }
 
-    pub fn create_downloader(self, url: &str, target_path: &Path) -> PipeDownloader {
-        PipeDownloader::new(url, target_path, self)
+    pub fn start_download(self, url: &str, target_path: &Path) -> anyhow::Result<PipeDownloader> {
+        let mut pd = PipeDownloader::new(url, target_path, self);
+        pd.start_download()?;
+        Ok(pd)
     }
 }
 
@@ -76,7 +78,7 @@ pub struct PipeDownloader {
 }
 
 impl PipeDownloader {
-    pub fn new(
+    fn new(
         url: &str,
         target_path: &Path,
         pipe_downloader_options: PipeDownloaderOptions,
@@ -530,91 +532,8 @@ fn resolve_url(download_url: String, pc: Arc<Mutex<InternalProgress>>) -> anyhow
 }
 
 impl PipeDownloader {
-    pub fn signal_stop(self: &PipeDownloader) {
-        let mut pc = self
-            .progress_context
-            .lock()
-            .expect("Failed to lock progress context");
-        pc.stop_requested = true;
-    }
-
-    pub fn pause_download(self: &PipeDownloader) {
-        let mut pc = self
-            .progress_context
-            .lock()
-            .expect("Failed to lock progress context");
-        pc.paused = true;
-    }
-
-    pub fn resume_download(self: &PipeDownloader) {
-        let mut pc = self
-            .progress_context
-            .lock()
-            .expect("Failed to lock progress context");
-        pc.paused = false;
-    }
-
-    pub fn is_finished(self: &PipeDownloader) -> bool {
-        if let Some(thread_last_stage) = self.thread_last_stage.as_ref() {
-            thread_last_stage.is_finished()
-        } else {
-            false
-        }
-    }
-
-    fn get_progress_guard(self: &PipeDownloader) -> MutexGuard<InternalProgress> {
-        self.progress_context
-            .lock()
-            .expect("Failed to lock progress context")
-    }
-
-    pub fn get_progress_json(self: &PipeDownloader) -> PipeDownloaderProgress {
-        self.get_progress_guard().progress()
-    }
-
-    pub fn get_progress_human_line(self: &PipeDownloader) -> String {
-        let progress = self.get_progress_guard();
-
-        let eta_string = if let Some(eta) = progress.get_time_left_sec() {
-            let seconds = eta % 60;
-            let minutes = (eta / 60) % 60;
-            let hours = (eta / 60) / 60;
-            format!("ETA: {:02}:{:02}:{:02}", hours, minutes, seconds)
-        } else {
-            "ETA: unknown".to_string()
-        };
-        let percent_string = if let Some(total_length) = progress.total_download_size {
-            format!(
-                "[{:.2}%]",
-                ((progress.total_downloaded + progress.chunk_downloaded.iter().sum::<usize>())
-                    as f64
-                    / total_length as f64)
-                    * 100.0
-            )
-        } else {
-            "".to_string()
-        };
-
-        format!(
-            "Downloaded: {} [{}/s now: {}/s], Unpack: {} [{}/s now: {}/s] - {} {}",
-            bytes_to_human(
-                progress.total_downloaded + progress.chunk_downloaded.iter().sum::<usize>()
-            ),
-            bytes_to_human(progress.get_download_speed()),
-            bytes_to_human(progress.progress_buckets_download.get_speed()),
-            bytes_to_human(progress.total_unpacked),
-            bytes_to_human(progress.get_unpack_speed()),
-            bytes_to_human(progress.progress_buckets_unpack.get_speed()),
-            eta_string,
-            percent_string
-        )
-    }
-
-    pub fn is_started(self: &PipeDownloader) -> bool {
-        self.download_started
-    }
-
-    pub fn start_download(self: &mut PipeDownloader) -> anyhow::Result<()> {
+    /// Process inputs and try to start download
+    fn start_download(self: &mut PipeDownloader) -> anyhow::Result<()> {
         if self.download_started {
             return Err(anyhow::anyhow!("Download already started"));
         }
@@ -762,4 +681,97 @@ impl PipeDownloader {
 
         Ok(())
     }
+
+    /// Returns serializable PipeDownloaderProgress
+    pub fn get_progress(self: &PipeDownloader) -> PipeDownloaderProgress {
+        self.get_progress_guard().progress()
+    }
+
+    /// Returns progress as human readable line
+    pub fn get_progress_human_line(self: &PipeDownloader) -> String {
+        let progress = self.get_progress_guard();
+
+        let eta_string = if let Some(eta) = progress.get_time_left_sec() {
+            let seconds = eta % 60;
+            let minutes = (eta / 60) % 60;
+            let hours = (eta / 60) / 60;
+            format!("ETA: {:02}:{:02}:{:02}", hours, minutes, seconds)
+        } else {
+            "ETA: unknown".to_string()
+        };
+        let percent_string = if let Some(total_length) = progress.total_download_size {
+            format!(
+                "[{:.2}%]",
+                ((progress.total_downloaded + progress.chunk_downloaded.iter().sum::<usize>())
+                    as f64
+                    / total_length as f64)
+                    * 100.0
+            )
+        } else {
+            "".to_string()
+        };
+
+        format!(
+            "Downloaded: {} [{}/s now: {}/s], Unpack: {} [{}/s now: {}/s] - {} {}",
+            bytes_to_human(
+                progress.total_downloaded + progress.chunk_downloaded.iter().sum::<usize>()
+            ),
+            bytes_to_human(progress.get_download_speed()),
+            bytes_to_human(progress.progress_buckets_download.get_speed()),
+            bytes_to_human(progress.total_unpacked),
+            bytes_to_human(progress.get_unpack_speed()),
+            bytes_to_human(progress.progress_buckets_unpack.get_speed()),
+            eta_string,
+            percent_string
+        )
+    }
+
+    /// Cancel download
+    pub fn signal_stop(self: &PipeDownloader) {
+        let mut pc = self
+            .progress_context
+            .lock()
+            .expect("Failed to lock progress context");
+        pc.stop_requested = true;
+    }
+
+    ///Downloader supports pausing and resuming, you can call this method to pause download
+    pub fn pause_download(self: &PipeDownloader) {
+        let mut pc = self
+            .progress_context
+            .lock()
+            .expect("Failed to lock progress context");
+        pc.paused = true;
+    }
+
+    ///Downloader supports pausing and resuming, you can call this method to resume download
+    pub fn resume_download(self: &PipeDownloader) {
+        let mut pc = self
+            .progress_context
+            .lock()
+            .expect("Failed to lock progress context");
+        pc.paused = false;
+    }
+
+    /// Check if download is finished
+    pub fn is_finished(self: &PipeDownloader) -> bool {
+        if let Some(thread_last_stage) = self.thread_last_stage.as_ref() {
+            thread_last_stage.is_finished()
+        } else {
+            false
+        }
+    }
+
+    fn get_progress_guard(self: &PipeDownloader) -> MutexGuard<InternalProgress> {
+        self.progress_context
+            .lock()
+            .expect("Failed to lock progress context")
+    }
+
+    /// Check if download is started
+    pub fn is_started(self: &PipeDownloader) -> bool {
+        self.download_started
+    }
+
+
 }

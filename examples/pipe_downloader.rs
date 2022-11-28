@@ -54,7 +54,7 @@ fn main() -> anyhow::Result<()> {
     env_logger::init();
     let opt: Opt = Opt::from_args();
 
-    let mut pd = PipeDownloaderOptions {
+    let pd = PipeDownloaderOptions {
         chunk_size_decoder: opt.unpack_buffer,
         chunk_size_downloader: opt.download_buffer,
         max_download_speed: opt.limit_speed,
@@ -62,15 +62,14 @@ fn main() -> anyhow::Result<()> {
         download_threads: opt.download_threads,
     }
     .apply_env()
-    .create_downloader(&opt.url, &opt.output_dir);
-    pd.start_download()?;
+    .start_download(&opt.url, &opt.output_dir)?;
 
     let current_time = std::time::Instant::now();
     loop {
         if opt.json_output {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&pd.get_progress_json()).unwrap()
+                serde_json::to_string_pretty(&pd.get_progress()).unwrap()
             )
         } else {
             println!("{}", pd.get_progress_human_line());
