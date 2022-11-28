@@ -174,7 +174,7 @@ fn request_chunk(
     let content_length = response
         .headers()
         .get("Content-Length")
-        .ok_or_else(||anyhow::anyhow!("Content-Length header not found"))?
+        .ok_or_else(|| anyhow::anyhow!("Content-Length header not found"))?
         .to_str()?;
     let content_length = usize::from_str(content_length)?;
 
@@ -281,7 +281,7 @@ fn download_loop(
     let length = response
         .headers()
         .get(CONTENT_LENGTH)
-        .ok_or_else(||anyhow!("response doesn't include the content length"))?;
+        .ok_or_else(|| anyhow!("response doesn't include the content length"))?;
     let total_length =
         usize::from_str(length.to_str()?).map_err(|_| anyhow!("invalid Content-Length header"))?;
 
@@ -439,8 +439,11 @@ fn download_loop(
                         // search from right to left, because smallest chunk are on the right
                         // also remove element from right, because it is faster
                         let mut pc = progress_context.lock().unwrap();
-                        let idx_to_remove =
-                            pc.unfinished_chunks.iter().rposition(|el| *el == i).unwrap_or_else(|| {
+                        let idx_to_remove = pc
+                            .unfinished_chunks
+                            .iter()
+                            .rposition(|el| *el == i)
+                            .unwrap_or_else(|| {
                                 panic!("Critical error, chunk {} should be in unfinished chunks", i)
                             });
                         assert!(i == pc.unfinished_chunks[idx_to_remove]);
@@ -497,7 +500,6 @@ fn resolve_url(download_url: String, pc: Arc<Mutex<ProgressContext>>) -> anyhow:
 }
 
 impl PipeDownloader {
-    #[allow(unused)]
     pub fn signal_stop(self: &PipeDownloader) {
         let mut pc = self
             .progress_context
