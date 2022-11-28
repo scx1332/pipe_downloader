@@ -1,14 +1,12 @@
-use human_bytes::human_bytes;
-
+use humansize::{FormatSizeOptions, SizeFormatter, DECIMAL};
 use std::sync::{Arc, Mutex};
 use std::thread;
-
 use std::time::Duration;
 
 use crate::pipe_progress::InternalProgress;
 
-pub fn bytes_to_human(bytes: usize) -> String {
-    human_bytes(bytes as f64)
+pub fn bytes_to_human(bytes: usize) -> SizeFormatter<usize, FormatSizeOptions> {
+    SizeFormatter::new(bytes, DECIMAL)
 }
 
 pub fn resolve_url(
