@@ -1,30 +1,30 @@
-use flate2::read::GzDecoder;
+
 use human_bytes::human_bytes;
 
-use reqwest::header::CONTENT_LENGTH;
-use reqwest::StatusCode;
-use std::fs::File;
-use std::io::Read;
-use std::path::{Path, PathBuf};
 
-use std::str::FromStr;
-use std::sync::mpsc::{sync_channel, SyncSender};
-use std::sync::{Arc, Mutex, MutexGuard};
+
+
+
+
+
+
+
+use std::sync::{Arc, Mutex};
 use std::thread;
 
-use lz4::Decoder as Lz4Decoder;
 
-use crate::options::PipeDownloaderOptions;
-use anyhow::anyhow;
-use bzip2::read::BzDecoder;
-use lz4_flex::frame::FrameDecoder;
-use reqwest::blocking::Response;
+
+
+
+
+
+
 use std::time::Duration;
-use tar::Archive;
+
 
 use crate::pipe_progress::InternalProgress;
-use crate::pipe_wrapper::{DataChunk, MpscReaderFromReceiver};
-use crate::PipeDownloaderProgress;
+
+
 
 pub fn bytes_to_human(bytes: usize) -> String {
     human_bytes(bytes as f64)
