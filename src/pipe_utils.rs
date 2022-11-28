@@ -1,30 +1,11 @@
-
 use human_bytes::human_bytes;
-
-
-
-
-
-
-
-
 
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-
-
-
-
-
-
-
 use std::time::Duration;
 
-
 use crate::pipe_progress::InternalProgress;
-
-
 
 pub fn bytes_to_human(bytes: usize) -> String {
     human_bytes(bytes as f64)

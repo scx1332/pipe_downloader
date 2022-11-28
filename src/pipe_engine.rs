@@ -1,30 +1,22 @@
-
-
 use reqwest::header::CONTENT_LENGTH;
 use reqwest::StatusCode;
 
 use std::io::Read;
 
-
 use std::str::FromStr;
-use std::sync::mpsc::{SyncSender};
+use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 use std::thread;
-
-
 
 use crate::options::PipeDownloaderOptions;
 use anyhow::anyhow;
 
-
 use reqwest::blocking::Response;
 use std::time::Duration;
 
-
 use crate::pipe_progress::InternalProgress;
 use crate::pipe_utils::bytes_to_human;
-use crate::pipe_wrapper::{DataChunk};
-
+use crate::pipe_wrapper::DataChunk;
 
 fn download_chunk(
     thread_no: usize,

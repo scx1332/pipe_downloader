@@ -1,13 +1,10 @@
 use flate2::read::GzDecoder;
 
-
-
 use std::fs::File;
 
 use std::path::{Path, PathBuf};
 
-
-use std::sync::mpsc::{sync_channel};
+use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
@@ -17,7 +14,6 @@ use crate::options::PipeDownloaderOptions;
 
 use bzip2::read::BzDecoder;
 use lz4_flex::frame::FrameDecoder;
-
 
 use tar::Archive;
 
