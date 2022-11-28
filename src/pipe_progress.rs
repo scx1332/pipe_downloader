@@ -51,7 +51,7 @@ impl ProgressHistory {
         (total as f64 / elapsed_secs).round() as usize
     }
 
-    pub fn add_bytes(self: &mut Self, bytes: usize) {
+    pub fn add_bytes(&mut self, bytes: usize) {
         let current_time = chrono::Utc::now();
         if let Some(last_entry) = self.progress_entries.last_mut() {
             if current_time - last_entry.time < self.keep_time.div(self.max_entries as i32) {
@@ -61,7 +61,7 @@ impl ProgressHistory {
         }
         self.progress_entries.push(ProgressHistoryEntry {
             time: current_time,
-            bytes: bytes,
+            bytes,
         });
 
         //this should be removed max one time
@@ -150,7 +150,7 @@ impl ProgressContext {
     }
 
     pub fn get_elapsed(&self) -> chrono::Duration {
-        self.finish_time.unwrap_or(chrono::Utc::now()) - self.start_time
+        self.finish_time.unwrap_or_else(chrono::Utc::now) - self.start_time
     }
 
     pub fn get_time_left_sec(&self) -> Option<u64> {

@@ -1,11 +1,10 @@
 use flate2::read::GzDecoder;
-use log;
 
 use reqwest::header::CONTENT_LENGTH;
 use reqwest::StatusCode;
 use std::fs::File;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use std::str::FromStr;
 use std::sync::mpsc::{sync_channel, SyncSender};
@@ -74,14 +73,14 @@ pub struct PipeDownloader {
 impl PipeDownloader {
     pub fn new(
         url: &str,
-        target_path: &PathBuf,
+        target_path: &Path,
         pipe_downloader_options: PipeDownloaderOptions,
     ) -> Self {
         Self {
             url: url.to_string(),
             progress_context: Arc::new(Mutex::new(ProgressContext::default())),
             download_started: false,
-            target_path: target_path.clone(),
+            target_path: target_path.to_path_buf(),
             thread_last_stage: None,
             options: pipe_downloader_options,
         }
@@ -154,7 +153,7 @@ fn download_chunk(
         range.end - range.start
     );
 
-    return Ok(buf_vec);
+    Ok(buf_vec)
 }
 
 fn request_chunk(
@@ -175,7 +174,7 @@ fn request_chunk(
     let content_length = response
         .headers()
         .get("Content-Length")
-        .ok_or(anyhow::anyhow!("Content-Length header not found"))?
+        .ok_or_else(||anyhow::anyhow!("Content-Length header not found"))?
         .to_str()?;
     let content_length = usize::from_str(content_length)?;
 
@@ -282,7 +281,7 @@ fn download_loop(
     let length = response
         .headers()
         .get(CONTENT_LENGTH)
-        .ok_or(anyhow!("response doesn't include the content length"))?;
+        .ok_or_else(||anyhow!("response doesn't include the content length"))?;
     let total_length =
         usize::from_str(length.to_str()?).map_err(|_| anyhow!("invalid Content-Length header"))?;
 
@@ -308,13 +307,11 @@ fn download_loop(
     }
     let thread_count = if use_chunks {
         thread_count
+    } else if thread_no != 0 {
+        log::warn!("Thread number is set, but server does not support partial content, falling back to single request");
+        return Ok(());
     } else {
-        if thread_no != 0 {
-            log::warn!("Thread number is set, but server does not support partial content, falling back to single request");
-            return Ok(());
-        } else {
-            1
-        }
+        1
     };
 
     progress_context
@@ -443,10 +440,9 @@ fn download_loop(
                         // also remove element from right, because it is faster
                         let mut pc = progress_context.lock().unwrap();
                         let idx_to_remove =
-                            pc.unfinished_chunks.iter().rposition(|el| *el == i).expect(
-                                format!("Critical error unfinished chunks have to be here {}", i)
-                                    .as_str(),
-                            );
+                            pc.unfinished_chunks.iter().rposition(|el| *el == i).unwrap_or_else(|| {
+                                panic!("Critical error, chunk {} should be in unfinished chunks", i)
+                            });
                         assert!(i == pc.unfinished_chunks[idx_to_remove]);
                         log::warn!("Removing chunk {} at idx {}", i, idx_to_remove);
                         pc.unfinished_chunks.remove(idx_to_remove);
@@ -591,7 +587,7 @@ impl PipeDownloader {
 
     #[allow(unused)]
     pub fn is_started(self: &PipeDownloader) -> bool {
-        return self.download_started;
+        self.download_started
     }
 
     pub fn start_download(self: &mut PipeDownloader) -> anyhow::Result<()> {
@@ -682,7 +678,7 @@ impl PipeDownloader {
         let mut p2 = MpscReaderFromReceiver::new(receive_unpack_chunks, false);
 
         let target_path = self.target_path.clone();
-        let download_url = url.clone();
+        let download_url = url;
 
         let pc = self.progress_context.clone();
         self.thread_last_stage = Some(thread::spawn(move || {

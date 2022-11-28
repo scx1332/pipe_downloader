@@ -4,7 +4,6 @@ mod pipe_progress;
 mod pipe_utils;
 mod pipe_wrapper;
 
-use anyhow;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
