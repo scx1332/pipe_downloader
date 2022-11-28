@@ -1,8 +1,8 @@
+use anyhow;
+use pipe_downloader::PipeDownloaderOptions;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
-
-use pipe_downloader::PipeDownloaderOptions;
 
 use structopt::StructOpt;
 
