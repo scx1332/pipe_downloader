@@ -1,6 +1,7 @@
 use chrono::{Duration, Utc};
 use serde_json::json;
 use std::ops::Div;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct ProgressHistoryEntry {
@@ -83,7 +84,7 @@ impl ProgressHistory {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProgressContext {
+pub struct InternalProgress {
     pub start_time: chrono::DateTime<chrono::Utc>,
     pub unfinished_chunks: Vec<usize>,
     pub total_downloaded: usize,
@@ -103,9 +104,9 @@ pub struct ProgressContext {
     pub download_url: Option<String>,
 }
 
-impl Default for ProgressContext {
-    fn default() -> ProgressContext {
-        ProgressContext {
+impl Default for InternalProgress {
+    fn default() -> InternalProgress {
+        InternalProgress {
             start_time: chrono::Utc::now(),
             unfinished_chunks: vec![],
             total_download_size: None,
@@ -127,8 +128,47 @@ impl Default for ProgressContext {
     }
 }
 
-impl ProgressContext {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PipeDownloaderProgress {
+    pub start_time: chrono::DateTime<chrono::Utc>,
+    pub downloaded: usize,
+    pub unpacked: usize,
+    pub stop_requested: bool,
+    pub paused: bool,
+    pub elapsed_time_sec: f64,
+    pub eta_sec: Option<u64>,
+    pub finish_time: Option<chrono::DateTime<chrono::Utc>>,
+    pub current_download_speed: usize,
+    pub current_unpack_speed: usize,
+    pub error_message: Option<String>,
+    pub error_message_download: Option<String>,
+    pub error_message_unpack: Option<String>,
+    pub total_unpack_size: Option<usize>,
+    pub total_download_size: Option<usize>,
+    pub download_url: Option<String>,
+}
+
+impl InternalProgress {
     pub fn to_json(&self) -> serde_json::Value {
+        PipeDownloaderProgress {
+            start_time: self.start_time,
+            downloaded: self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>(),
+            unpacked: self.total_unpacked,
+            stop_requested: self.stop_requested,
+            paused: self.paused,
+            elapsed_time_sec: self.get_elapsed().num_milliseconds() as f64 / 1000.0,
+            eta_sec: self.get_time_left_sec(),
+            finish_time: self.finish_time,
+            current_download_speed: self.progress_buckets_download.get_speed(),
+            current_unpack_speed: self.progress_buckets_unpack.get_speed(),
+            error_message: self.error_message.clone(),
+            error_message_download: self.error_message_download.clone(),
+            error_message_unpack: self.error_message_unpack.clone(),
+            total_unpack_size: self.total_unpack_size,
+            total_download_size: self.total_download_size,
+            download_url: self.download_url.clone()
+        };
         json!({
             "startTime": self.start_time.to_rfc3339(),
             "downloaded": self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>(),

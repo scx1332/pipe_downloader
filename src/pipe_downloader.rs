@@ -20,7 +20,7 @@ use reqwest::blocking::Response;
 use std::time::Duration;
 use tar::Archive;
 
-use crate::pipe_progress::ProgressContext;
+use crate::pipe_progress::InternalProgress;
 use crate::pipe_utils::bytes_to_human;
 use crate::pipe_wrapper::{DataChunk, MpscReaderFromReceiver};
 
@@ -63,7 +63,7 @@ impl PipeDownloaderOptions {
 
 pub struct PipeDownloader {
     url: String,
-    progress_context: Arc<Mutex<ProgressContext>>,
+    progress_context: Arc<Mutex<InternalProgress>>,
     options: PipeDownloaderOptions,
     download_started: bool,
     target_path: PathBuf,
@@ -78,7 +78,7 @@ impl PipeDownloader {
     ) -> Self {
         Self {
             url: url.to_string(),
-            progress_context: Arc::new(Mutex::new(ProgressContext::default())),
+            progress_context: Arc::new(Mutex::new(InternalProgress::default())),
             download_started: false,
             target_path: target_path.to_path_buf(),
             thread_last_stage: None,
@@ -89,7 +89,7 @@ impl PipeDownloader {
 
 fn download_chunk(
     thread_no: usize,
-    progress_context: Arc<Mutex<ProgressContext>>,
+    progress_context: Arc<Mutex<InternalProgress>>,
     range: &std::ops::Range<usize>,
     max_speed: Option<usize>,
     response: &mut reqwest::blocking::Response,
@@ -202,7 +202,7 @@ fn request_chunk(
 }
 
 fn decode_loop<T: Read>(
-    progress_context: Arc<Mutex<ProgressContext>>,
+    progress_context: Arc<Mutex<InternalProgress>>,
     options: &PipeDownloaderOptions,
     decoder: &mut T,
     send: std::sync::mpsc::SyncSender<DataChunk>,
@@ -252,7 +252,7 @@ fn download_loop(
     thread_no: usize,
     thread_count: usize,
     options: PipeDownloaderOptions,
-    progress_context: Arc<Mutex<ProgressContext>>,
+    progress_context: Arc<Mutex<InternalProgress>>,
     send_download_chunks: SyncSender<DataChunk>,
     download_url: &str,
 ) -> anyhow::Result<()> {
@@ -278,24 +278,32 @@ fn download_loop(
     progress_context.lock().unwrap().download_url = Some(download_url.clone());
 
     let response = client.head(&download_url).send()?;
-    let length = response
+
+    let total_length = match response
         .headers()
         .get(CONTENT_LENGTH)
-        .ok_or_else(|| anyhow!("response doesn't include the content length"))?;
-    let total_length =
-        usize::from_str(length.to_str()?).map_err(|_| anyhow!("invalid Content-Length header"))?;
+        .ok_or_else(|| anyhow!("response doesn't include the content length")) {
+        Ok(length) => Some(usize::from_str(length.to_str()?).map_err(|_| anyhow!("invalid Content-Length header"))?),
+        Err(_) => {
+            log::warn!("Content-Length header not found, continue download without knowledge about file size...");
+            use_chunks = false;
+            None
+        }
+    };
 
-    progress_context.lock().unwrap().total_download_size = Some(total_length);
-    if total_length == 0 {
+    progress_context.lock().unwrap().total_download_size = total_length;
+
+    if total_length.map(|total_length| total_length == 0).unwrap_or(false) {
         return Err(anyhow::anyhow!(
             "Content-Length is 0, empty files not supported"
         ));
     }
 
-    if total_length < 10000 {
+    if total_length.map(|total_length| total_length < 10000).unwrap_or(false) {
         log::info!("Single request mode");
         use_chunks = false;
     }
+
     //check if server supports partial content
     if use_chunks {
         let header = format!("bytes={}-{}", 1000, 2000);
@@ -327,11 +335,17 @@ fn download_loop(
 
     let chunk_size = options.chunk_size_downloader;
 
+    let chunk_count = match total_length {
+        Some(total_length) => ((total_length - 1) / chunk_size + 1) as usize,
+        None => 1,
+    };
+    let total_length = total_length.ok_or(anyhow!("Feature not implemented yet"))?;
+
     {
         //first thread to fill this value (blocking other threads)
         let mut pc = progress_context.lock().unwrap();
         if pc.unfinished_chunks.is_empty() {
-            for i in 0..((total_length - 1) / chunk_size + 1) {
+            for i in 0..chunk_count {
                 pc.unfinished_chunks.push(i);
             }
             pc.unfinished_chunks.reverse();
@@ -339,7 +353,7 @@ fn download_loop(
         }
     }
 
-    for i in 0..((total_length - 1) / chunk_size + 1) {
+    for i in 0..chunk_count {
         let max_length = std::cmp::min(chunk_size, total_length - i * chunk_size);
         if max_length == 0 {
             break;
@@ -483,7 +497,7 @@ fn download_loop(
     Ok(())
 }
 
-fn resolve_url(download_url: String, pc: Arc<Mutex<ProgressContext>>) -> anyhow::Result<String> {
+fn resolve_url(download_url: String, pc: Arc<Mutex<InternalProgress>>) -> anyhow::Result<String> {
     if download_url.ends_with(".link") {
         loop {
             if let Some(url) = pc.lock().unwrap().download_url.clone() {
@@ -534,15 +548,10 @@ impl PipeDownloader {
         }
     }
 
-    fn get_progress_guard(self: &PipeDownloader) -> MutexGuard<ProgressContext> {
+    fn get_progress_guard(self: &PipeDownloader) -> MutexGuard<InternalProgress> {
         self.progress_context
             .lock()
             .expect("Failed to lock progress context")
-    }
-
-    
-    pub fn get_progress(self: &PipeDownloader) -> ProgressContext {
-        self.get_progress_guard().clone()
     }
 
     pub fn get_progress_json(self: &PipeDownloader) -> serde_json::Value {

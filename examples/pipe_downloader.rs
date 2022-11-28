@@ -17,7 +17,7 @@ struct Opt {
     #[structopt(short = "o", long = "output-dir", parse(from_os_str))]
     output_dir: PathBuf,
 
-    /// Max bytes downloaded per seconde
+    /// Max bytes downloaded per seconds
     #[structopt(long = "limit-speed")]
     limit_speed: Option<usize>,
 
