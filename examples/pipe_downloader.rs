@@ -7,7 +7,7 @@ use pipe_downloader::{PipeDownloaderOptions};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "example", about = "Options for pipe downloader")]
+#[structopt(name = "Pipe downloader", about = "Fast multithreaded downloader for tar.lz4, tar.gz, tar.bz2 files")]
 struct Opt {
     /// Url of tar.gz or tar.lz4 file
     #[structopt(long = "url")]
