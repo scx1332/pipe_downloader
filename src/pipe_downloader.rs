@@ -354,7 +354,7 @@ fn download_loop(
         Some(total_length) => ((total_length - 1) / chunk_size + 1) as usize,
         None => 1,
     };
-    let total_length = total_length.ok_or(anyhow!("Feature not implemented yet"))?;
+    let total_length = total_length.ok_or_else(|| anyhow!("Content length unknown"))?;
 
     {
         //first thread to fill this value (blocking other threads)
