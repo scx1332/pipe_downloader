@@ -346,10 +346,11 @@ fn download_loop(
         //first thread to fill this value (blocking other threads)
         let mut pc = progress_context.lock().unwrap();
         if pc.unfinished_chunks.is_empty() {
-            for i in 0..chunk_count {
+            pc.total_chunks = chunk_count;
+            pc.unfinished_chunks.reserve(chunk_count);
+            for i in (0..chunk_count).rev() {
                 pc.unfinished_chunks.push(i);
             }
-            pc.unfinished_chunks.reverse();
             log::warn!("Unfinished chunks: {:?}", pc.unfinished_chunks);
         }
     }

@@ -86,6 +86,7 @@ impl ProgressHistory {
 pub struct InternalProgress {
     pub start_time: chrono::DateTime<chrono::Utc>,
     pub unfinished_chunks: Vec<usize>,
+    pub total_chunks: usize,
     pub total_downloaded: usize,
     pub total_download_size: Option<usize>,
     pub chunk_downloaded: Vec<usize>,
@@ -108,6 +109,7 @@ impl Default for InternalProgress {
         InternalProgress {
             start_time: chrono::Utc::now(),
             unfinished_chunks: vec![],
+            total_chunks: 0,
             total_download_size: None,
             total_downloaded: 0,
             chunk_downloaded: vec![],
@@ -146,6 +148,9 @@ pub struct PipeDownloaderProgress {
     pub total_unpack_size: Option<usize>,
     pub total_download_size: Option<usize>,
     pub download_url: Option<String>,
+    pub chunks_downloading: usize,
+    pub chunks_total: usize,
+    pub chunks_left: usize,
 }
 
 impl InternalProgress {
@@ -167,6 +172,9 @@ impl InternalProgress {
             total_unpack_size: self.total_unpack_size,
             total_download_size: self.total_download_size,
             download_url: self.download_url.clone(),
+            chunks_downloading: self.chunk_downloaded.len(),
+            chunks_total: self.total_chunks,
+            chunks_left: self.unfinished_chunks.len(),
         }
     }
 
