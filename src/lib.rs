@@ -1,5 +1,6 @@
 mod options;
 mod pipe_downloader;
+mod pipe_engine;
 mod pipe_progress;
 mod pipe_utils;
 mod pipe_wrapper;
