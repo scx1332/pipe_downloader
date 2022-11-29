@@ -1,5 +1,5 @@
 use anyhow;
-use pipe_downloader::PipeDownloaderOptions;
+use pipe_downloader_lib::PipeDownloaderOptions;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
