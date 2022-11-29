@@ -1,10 +1,9 @@
 mod options;
 
-use anyhow;
+use crate::options::CliOptions;
 use pipe_downloader_lib::PipeDownloaderOptions;
 use std::thread;
 use std::time::Duration;
-use crate::options::CliOptions;
 use structopt::StructOpt;
 
 fn main() -> anyhow::Result<()> {

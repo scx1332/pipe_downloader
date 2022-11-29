@@ -3,8 +3,8 @@ use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(
-name = "Pipe downloader",
-about = "Fast multithreaded downloader for tar.lz4, tar.gz, tar.bz2 files"
+    name = "Pipe downloader",
+    about = "Fast multithreaded downloader for tar.lz4, tar.gz, tar.bz2 files"
 )]
 pub struct CliOptions {
     /// Url of tar.gz or tar.lz4 file
