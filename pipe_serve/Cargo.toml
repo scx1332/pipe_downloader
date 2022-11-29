@@ -1,0 +1,13 @@
+[package]
+name = "pipe_serve"
+description = "Simple static server based on warp"
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+structopt = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros"] }
+warp = { workspace = true }
+
