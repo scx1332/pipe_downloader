@@ -1,1 +1,0 @@
-This folder is used for testing you can safely delete contents of this directory
