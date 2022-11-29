@@ -2,7 +2,6 @@ mod options;
 
 use anyhow;
 use pipe_downloader_lib::PipeDownloaderOptions;
-use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 use crate::options::CliOptions;
