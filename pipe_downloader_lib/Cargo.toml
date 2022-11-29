@@ -1,0 +1,30 @@
+[package]
+name = "pipe_downloader_lib"
+description = "Fast downloader + extractor library for *.tar.gz, *tar.lz4 and *.tar.bz2 files."
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "pipe_downloader_lib"
+
+[features]
+default = ["serde", "with-lz4"]
+https = ["reqwest/rustls-tls"]
+with-lz4 = ["lz4"]
+lz4-rust = ["lz4_flex"]
+serde = ["dep:serde"]
+
+[dependencies]
+reqwest = { workspace = true, default-features = false, features = ["blocking"] }
+anyhow = { workspace = true }
+lz4 = { workspace = true, optional = true }
+log = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
+humansize = { workspace = true, default-features = false, features = ["no_alloc"] }
+bzip2 = { workspace = true }
+serde = { workspace = true, features = ["derive"], optional = true }
+lz4_flex = { workspace = true, optional = true }
+chrono = { workspace = true, default-features = false, features = ["std", "serde"] }

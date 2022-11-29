@@ -132,7 +132,11 @@ impl Default for InternalProgress {
     }
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(rename_all = "camelCase"))]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 #[derive(Debug, Clone, Default)]
 pub struct PipeDownloaderProgress {
     pub start_time: chrono::DateTime<chrono::Utc>,
