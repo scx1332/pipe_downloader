@@ -69,13 +69,14 @@ fn compress(source: &Path, destination: &Path) {
 
 #[tokio::test]
 async fn test_something_async() {
-    let static_dir = "tmp/static".to_string();
-    let sd = Path::new(&static_dir);
-    /*let static_dir = format!("tmp/static_{}", rand::thread_rng()
+    //let static_dir = "tmp/static".to_string();
+    let static_dir = format!("tmp/static_{}", rand::thread_rng()
         .sample_iter(&Alphanumeric)
         .take(7)
         .map(char::from)
-        .collect::<String>());*/
+        .collect::<String>());
+
+    let sd = Path::new(&static_dir);
 
     fs::create_dir_all(sd).unwrap();
     fs::create_dir_all(sd.join("subdir1")).unwrap();
@@ -151,4 +152,6 @@ async fn test_something_async() {
         tokio::time::sleep(Duration::from_millis(1000)).await;
     }
     tsk.abort();
+
+    fs::remove_dir_all(sd).unwrap();
 }
