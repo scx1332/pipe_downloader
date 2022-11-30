@@ -20,6 +20,7 @@ use bzip2::read::BzDecoder;
 use lz4_flex::frame::FrameDecoder;
 
 use tar::Archive;
+use xz2::write::{XzDecoder, XzEncoder};
 
 use crate::pipe_engine::decode_loop;
 use crate::pipe_engine::download_loop;
@@ -132,6 +133,9 @@ impl PipeDownloader {
             } else if download_url.ends_with(".bz2") {
                 let mut bz2 = BzDecoder::new(&mut p);
                 decode_loop(pc.clone(), &options, &mut bz2, send_unpack_chunks)
+            } else if download_url.ends_with(".xz") {
+                let mut xzDec = xz2::read::XzDecoder::new(&mut p);
+                decode_loop(pc.clone(), &options, &mut xzDec, send_unpack_chunks)
             } else {
                 panic!("Unknown file type");
             };

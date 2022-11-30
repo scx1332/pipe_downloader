@@ -40,21 +40,26 @@ tokio = "^1.22"
 warp = "^0.3.3"
 rand = "^0.8.5"
 fake = "^2.5.0"
+sha256 = "^1.1.1"
+xz2 = "^0.1.7"
 
 [dependencies]
 pipe_downloader_lib = { path = "pipe_downloader_lib", version = "0.4.2" }
+
 anyhow = { workspace = true }
 serde_json = { workspace = true }
 structopt = { workspace = true }
 env_logger = { workspace = true }
 
 [dev-dependencies]
+sha256 = { workspace = true }
 warp = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros"] }
 rand = { workspace = true }
 fake = { workspace = true, features=['derive'] }
 tar = { workspace = true }
 lz4 = { workspace = true }
+pipe_files = {path = "crates/pipe_files", version = "0.4.2" }
 
 [profile.release]
 lto = true

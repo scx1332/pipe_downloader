@@ -1,0 +1,19 @@
+[package]
+name = "pipe_files"
+description = "File manipulation"
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+structopt = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros"] }
+warp = { workspace = true }
+anyhow = { workspace = true }
+tar = { workspace = true }
+lz4 = { workspace = true }
+fake = { workspace = true }
+flate2 = { workspace = true }
+bzip2 = { workspace = true }
+xz2 = { workspace = true }

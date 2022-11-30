@@ -28,3 +28,4 @@ bzip2 = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 lz4_flex = { workspace = true, optional = true }
 chrono = { workspace = true, default-features = false, features = ["std", "serde"] }
+xz2 = { workspace = true }
