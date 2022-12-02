@@ -1,6 +1,6 @@
 [package]
-name = "pipe_files"
-description = "File manipulation"
+name = "pipe_utils"
+description = "File manipulation and other projects"
 authors.workspace = true
 version.workspace = true
 edition.workspace = true

@@ -1102,11 +1102,13 @@ name = "pipe_downloader"
 version = "0.4.2"
 dependencies = [
  "anyhow",
+ "bzip2",
  "env_logger",
  "fake",
+ "flate2",
  "lz4",
  "pipe_downloader_lib",
- "pipe_files",
+ "pipe_utils",
  "rand",
  "serde_json",
  "sha256",
@@ -1135,7 +1137,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "pipe_files"
+name = "pipe_serve"
+version = "0.4.2"
+dependencies = [
+ "structopt",
+ "tokio",
+ "warp",
+]
+
+[[package]]
+name = "pipe_utils"
 version = "0.4.2"
 dependencies = [
  "anyhow",
@@ -1149,15 +1160,6 @@ dependencies = [
  "tokio",
  "warp",
  "xz2",
-]
-
-[[package]]
-name = "pipe_serve"
-version = "0.4.2"
-dependencies = [
- "structopt",
- "tokio",
- "warp",
 ]
 
 [[package]]

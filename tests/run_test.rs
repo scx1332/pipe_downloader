@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio::{join, try_join};
 
 use pipe_downloader_lib::PipeDownloaderOptions;
-use pipe_files::{build_random_name_file, bzip_compress, gzip_compress, lz4_compress, xz_compress};
+use pipe_utils::{build_random_name_file, bzip_compress, gzip_compress, lz4_compress, xz_compress};
 
 #[derive(Debug, Clone)]
 struct Opt {
