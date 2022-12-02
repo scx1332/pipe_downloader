@@ -19,7 +19,6 @@ use bzip2::read::BzDecoder;
 #[cfg(feature = "lz4-rust")]
 use lz4_flex::frame::FrameDecoder;
 
-use tar::Archive;
 use crate::pipe_engine::decode_loop;
 use crate::pipe_engine::download_loop;
 use crate::pipe_progress::InternalProgress;
@@ -28,6 +27,7 @@ use crate::pipe_utils::resolve_url;
 use crate::pipe_wrapper::{DataChunk, MpscReaderFromReceiver};
 use crate::tsutils::TimePair;
 use crate::PipeDownloaderProgress;
+use tar::Archive;
 
 /// Created from [PipeDownloaderOptions]
 pub struct PipeDownloader {

@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio::{join, try_join};
 
 use pipe_downloader_lib::PipeDownloaderOptions;
-use pipe_utils::{build_random_name_file, bzip_compress, gzip_compress, lz4_compress, xz_compress};
+use pipe_utils::{build_random_file, bzip_compress, gzip_compress, lz4_compress, xz_compress};
 
 #[derive(Debug, Clone)]
 struct Opt {
@@ -73,7 +73,7 @@ async fn test_something_async() {
     for i in 0..100 {
         let file_name_str = format!("foo_{}.txt", rand_str(15));
         let file_path = &sd.join(&file_name_str);
-        build_random_name_file(file_path, rand::thread_rng().gen_range(10000..100000))
+        build_random_file(file_path, rand::thread_rng().gen_range(10000..100000))
             .await
             .unwrap();
         let hex_digest = try_digest(file_path.as_path()).unwrap();
