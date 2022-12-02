@@ -40,16 +40,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Install Rust toolchain
+      - name: Install musl-tools
+        run: |
+          set -ex
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Install Rust stable toolchain ${{ matrix.target }}
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           target: ${{ matrix.target }}
           override: true
 
-      - name: Build binary
+      - name: Build binary target/${{ matrix.target }}/release/pipe_downloader
         uses: actions-rs/cargo@v1
         with:
           use-cross: ${{ matrix.use-cross }}
           command: build
-          args: --release --target ${{ matrix.target }}
+          args: --release --bin pipe_downloader --target ${{ matrix.target }}
