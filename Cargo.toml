@@ -1,7 +1,6 @@
 [workspace]
 members = [
-    "crates/pipe_downloader_lib",
-    "crates/pipe_serve",
+    "crates/*",
 ]
 
 [workspace.package]
