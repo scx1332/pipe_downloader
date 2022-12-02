@@ -45,13 +45,13 @@ jobs:
         with:
           use-cross: true
           command: build
-          args: --release --example pipe_downloader --target ${{ matrix.target }}
+          args: --release --target ${{ matrix.target }}
 
       - name: Upload
         uses: svenstaro/upload-release-action@2.3.0
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: target/${{ matrix.target }}/release/examples/pipe_downloader${{ matrix.exe }}
+          file: target/${{ matrix.target }}/release/pipe_downloader${{ matrix.exe }}
           asset_name: pipe_downloader-${{ matrix.os }}-${{ matrix.cpu }}${{ matrix.exe }}
           tag: ${{ github.ref }}
           overwrite: true

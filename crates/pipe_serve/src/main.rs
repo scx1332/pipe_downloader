@@ -26,11 +26,10 @@ async fn main() {
     let route = warp::path("static").and(warp::fs::dir(opt.serve_dir.clone()));
 
     println!(
-        "Listening on {}:{}, serving static files: {}, {}//{}:{}/static",
+        "Listening on {}:{}, serving static files: {}, http://{}:{}/static",
         opt.listen_addr,
         opt.listen_port,
         opt.serve_dir.display(),
-        "http:",
         opt.listen_addr,
         opt.listen_port
     );

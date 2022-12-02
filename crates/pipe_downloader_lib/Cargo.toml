@@ -1,6 +1,6 @@
 [package]
 name = "pipe_downloader_lib"
-description = "Fast downloader + extractor library for *.tar.gz, *tar.lz4 and *.tar.bz2 files."
+description = "Core library - fast downloader + extractor library for *.tar.gz, *tar.lz4 and *.tar.bz2 files."
 authors.workspace = true
 version.workspace = true
 edition.workspace = true
@@ -28,3 +28,4 @@ bzip2 = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 lz4_flex = { workspace = true, optional = true }
 chrono = { workspace = true, default-features = false, features = ["std", "serde"] }
+xz2 = { workspace = true }

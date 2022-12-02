@@ -1,19 +1,20 @@
-use fake::{Dummy, Fake};
+use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
+
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use rand::{distributions::Alphanumeric, Rng};
-use std::io::Write;
 use warp::Filter;
 
-use std::io::{self};
+use sha256::try_digest;
 use std::time::Duration;
+use tokio::try_join;
 
-use lz4::EncoderBuilder;
 use pipe_downloader_lib::PipeDownloaderOptions;
+use pipe_utils::{build_random_file, bzip_compress, gzip_compress, lz4_compress, xz_compress};
 
 #[derive(Debug, Clone)]
 struct Opt {
@@ -44,32 +45,18 @@ async fn setup_server(opt: &Opt) {
         .await
 }
 
-fn compress(source: &Path, destination: &Path) {
-    println!(
-        "Compressing: {} -> {}",
-        source.display(),
-        destination.display()
-    );
-
-    let mut input_file = File::open(source).unwrap();
-    let output_file = File::create(destination).unwrap();
-    let mut encoder = EncoderBuilder::new().level(4).build(output_file).unwrap();
-    io::copy(&mut input_file, &mut encoder).unwrap();
-    let (_output, result) = encoder.finish();
-    result.unwrap();
+fn rand_str(len: usize) -> String {
+    rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(len)
+        .map(char::from)
+        .collect::<String>()
 }
 
 #[tokio::test]
 async fn test_something_async() {
     //let static_dir = "tmp/static".to_string();
-    let static_dir = format!(
-        "tmp/static_{}",
-        rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(7)
-            .map(char::from)
-            .collect::<String>()
-    );
+    let static_dir = format!("tmp/static_{}", rand_str(10));
 
     let sd = Path::new(&static_dir);
 
@@ -77,49 +64,30 @@ async fn test_something_async() {
     fs::create_dir_all(sd.join("subdir1")).unwrap();
     fs::create_dir_all(sd.join("subdir2")).unwrap();
 
-    // using `faker` module with locales
-    use fake::faker::name::raw::*;
-    use fake::locales::*;
-
-    let mut file = File::create(static_dir.clone() + "/foo.txt").unwrap();
-
-    let mut str = "".to_string();
-    for _i in 0..40000 {
-        let _name: String = Name(EN).fake();
-        str += format!(
-            "{}, {}, {}",
-            Name(EN).fake::<String>(),
-            Name(JA_JP).fake::<String>(),
-            Name(ZH_TW).fake::<String>()
-        )
-        .as_str();
-    }
-
-    for _i in 0..5 {
-        file.write(str.as_bytes()).unwrap();
-    }
-
-    fs::copy(sd.join("foo.txt"), sd.join("subdir1/foo.txt")).unwrap();
+    //fs::copy(sd.join("foo.txt"), sd.join("subdir1/foo.txt")).unwrap();
 
     let file = File::create(sd.join("foo.tar")).unwrap();
     let mut a = tar::Builder::new(file);
-    for i in 0..100 {
-        a.append_file(
-            format!("foo_{}.txt", i),
-            &mut File::open(sd.join("foo.txt")).unwrap(),
-        )
-        .unwrap();
+
+    let mut file_info_map = HashMap::<String, String>::new();
+    for _i in 0..100 {
+        let file_name_str = format!("foo_{}.txt", rand_str(15));
+        let file_path = &sd.join(&file_name_str);
+        build_random_file(file_path, rand::thread_rng().gen_range(10000..100000))
+            .await
+            .unwrap();
+        let hex_digest = try_digest(file_path.as_path()).unwrap();
+        println!("{} {}", hex_digest, &file_name_str);
+        file_info_map.insert(file_name_str.clone(), hex_digest);
+        a.append_file(&file_name_str, &mut File::open(file_path).unwrap())
+            .unwrap();
     }
-    compress(
-        sd.join("foo.tar").as_path(),
-        sd.join("foo.tar.lz4").as_path(),
-    );
+    let f1 = lz4_compress(sd.join("foo.tar"), sd.join("foo.tar.lz4"));
+    let f2 = gzip_compress(sd.join("foo.tar"), sd.join("foo.tar.gz"));
+    let f3 = bzip_compress(sd.join("foo.tar"), sd.join("foo.tar.bz2"));
+    let f4 = xz_compress(sd.join("foo.tar"), sd.join("foo.tar.xz"));
 
-    let name: String = Name(EN).fake();
-    println!("name {:?}", name);
-
-    let name: String = Name(ZH_TW).fake();
-    println!("name {:?}", name);
+    try_join!(f1, f2, f3, f4).unwrap();
 
     let opt = Opt {
         serve_dir: PathBuf::from(sd),
@@ -132,36 +100,38 @@ async fn test_something_async() {
         setup_server(&move_opt).await;
     });
 
-    let pd = PipeDownloaderOptions {
-        chunk_size_decoder: 30_000_000,
-        chunk_size_downloader: 10_000_000,
-        max_download_speed: None,
-        force_no_chunks: false,
-        download_threads: 10,
-    }
-    .start_download(
-        format!(
-            "http://{}:{}/static/foo.tar.lz4",
-            opt.listen_addr, opt.listen_port
-        )
-        .as_str(),
-        &sd.join("output"),
-    )
-    .unwrap();
-
-    let _current_time = std::time::Instant::now();
-    loop {
-        println!("{}", pd.get_progress_human_line());
-        if pd.is_finished() {
-            break;
+    for compr in ["lz4", "gz", "bz2", "xz"].iter() {
+        let pd = PipeDownloaderOptions {
+            chunk_size_decoder: 10000000,
+            chunk_size_downloader: 10000000,
+            max_download_speed: None,
+            force_no_chunks: false,
+            download_threads: 10,
         }
-        // test pause
-        // if elapsed.as_secs() > 30 {
-        //     pd.pause_download();
-        //     break;
-        // }
+        .start_download(
+            format!(
+                "http://{}:{}/static/foo.tar.{}",
+                opt.listen_addr, opt.listen_port, compr
+            )
+            .as_str(),
+            &sd.join(format!("output_{}", compr)),
+        )
+        .unwrap();
 
-        tokio::time::sleep(Duration::from_millis(1000)).await;
+        let _current_time = std::time::Instant::now();
+        loop {
+            println!("{}", pd.get_progress_human_line());
+            if pd.is_finished() {
+                break;
+            }
+            // test pause
+            // if elapsed.as_secs() > 30 {
+            //     pd.pause_download();
+            //     break;
+            // }
+
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+        }
     }
     tsk.abort();
 
