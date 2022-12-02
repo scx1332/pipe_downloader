@@ -6,10 +6,6 @@ on:
       - main
       - release/*
       - scx1332/*
-  pull_request:
-    branches:
-      - main
-      - release/*
 
 jobs:
   build:
@@ -24,6 +20,7 @@ jobs:
             use-cross: false
             install-musl: false
             exe: ".exe"
+            run-tests: true
           - cpu: x86_64
             os: linux
             target: x86_64-unknown-linux-musl
@@ -31,6 +28,7 @@ jobs:
             use-cross: false
             install-musl: true
             exe: ""
+            run-tests: true
           - cpu: aarch64
             os: linux
             target: aarch64-unknown-linux-musl
@@ -38,6 +36,7 @@ jobs:
             use-cross: true
             install-musl: false
             exe: ""
+            run-tests: false
           - cpu: aarch64
             os: macOS
             target: aarch64-apple-darwin
@@ -45,6 +44,7 @@ jobs:
             use-cross: true
             install-musl: false
             exe: ""
+            run-tests: false
           - cpu: x86_64
             os: macOS
             target: x86_64-apple-darwin
@@ -52,6 +52,7 @@ jobs:
             use-cross: false
             install-musl: false
             exe: ""
+            run-tests: true
 
     name: Build Release ${{ matrix.cpu }} ${{ matrix.os }}
     steps:
@@ -72,9 +73,18 @@ jobs:
           target: ${{ matrix.target }}
           override: true
 
+      - name: Run tests
+        if: ${{ matrix.run-tests }}
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: ${{ matrix.use-cross }}
+          command: test
+          args: --release
+
       - name: Build binary target/${{ matrix.target }}/release/pipe_downloader
         uses: actions-rs/cargo@v1
         with:
           use-cross: ${{ matrix.use-cross }}
           command: build
           args: --release --bin pipe_downloader --target ${{ matrix.target }}
+
