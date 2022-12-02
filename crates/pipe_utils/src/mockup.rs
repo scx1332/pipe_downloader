@@ -1,11 +1,8 @@
-use bzip2::write::BzEncoder;
 use fake::Fake;
-use flate2::write::GzEncoder;
-use lz4::EncoderBuilder;
 use std::fs::File;
 use std::io;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub async fn build_random_file(path: &Path, size: usize) -> io::Result<()> {
     // using `faker` module with locales
@@ -29,12 +26,12 @@ pub async fn build_random_file(path: &Path, size: usize) -> io::Result<()> {
         };
     }
 
-    let mut bytes_left = size;
+    let mut bytes_left: i64 = size as i64;
     loop {
-        if bytes_left < str.as_bytes().len() {
-            bytes_left -= file.write(&str.as_bytes()[0..bytes_left])?;
+        if bytes_left < str.as_bytes().len() as i64 {
+            bytes_left -= file.write(&str.as_bytes()[0..bytes_left as usize])? as i64;
         } else {
-            bytes_left -= file.write(str.as_bytes())?;
+            bytes_left -= file.write(str.as_bytes())? as i64;
         }
         if bytes_left <= 0 {
             break;

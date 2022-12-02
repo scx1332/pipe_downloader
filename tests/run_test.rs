@@ -6,12 +6,12 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use rand::{distributions::Alphanumeric, Rng};
 use warp::Filter;
 
-use sha256::{digest, try_digest};
+use sha256::try_digest;
 use std::time::Duration;
-use tokio::{join, try_join};
+use tokio::try_join;
 
 use pipe_downloader_lib::PipeDownloaderOptions;
 use pipe_utils::{build_random_file, bzip_compress, gzip_compress, lz4_compress, xz_compress};
@@ -70,7 +70,7 @@ async fn test_something_async() {
     let mut a = tar::Builder::new(file);
 
     let mut file_info_map = HashMap::<String, String>::new();
-    for i in 0..100 {
+    for _i in 0..100 {
         let file_name_str = format!("foo_{}.txt", rand_str(15));
         let file_path = &sd.join(&file_name_str);
         build_random_file(file_path, rand::thread_rng().gen_range(10000..100000))
@@ -135,5 +135,5 @@ async fn test_something_async() {
     }
     tsk.abort();
 
-    //fs::remove_dir_all(sd).unwrap();
+    fs::remove_dir_all(sd).unwrap();
 }
