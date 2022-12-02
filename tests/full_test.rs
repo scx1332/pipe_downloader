@@ -54,7 +54,7 @@ fn rand_str(len: usize) -> String {
 }
 
 #[tokio::test]
-async fn test_something_async() {
+async fn test_download_and_unpack() {
     //let static_dir = "tmp/static".to_string();
     let static_dir = format!("tmp/static_{}", rand_str(10));
 
@@ -73,7 +73,7 @@ async fn test_something_async() {
     for _i in 0..100 {
         let file_name_str = format!("foo_{}.txt", rand_str(15));
         let file_path = &sd.join(&file_name_str);
-        build_random_file(file_path, rand::thread_rng().gen_range(10000..100000))
+        build_random_file(file_path, rand::thread_rng().gen_range(20000..500000))
             .await
             .unwrap();
         let hex_digest = try_digest(file_path.as_path()).unwrap();

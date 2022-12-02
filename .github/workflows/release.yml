@@ -15,37 +15,74 @@ jobs:
             target: x86_64-pc-windows-msvc
             build-on: windows-latest
             use-cross: false
+            install-musl: false
             exe: ".exe"
+            run-tests: true
           - cpu: x86_64
             os: linux
             target: x86_64-unknown-linux-musl
             build-on: ubuntu-latest
-            use-cross: true
+            use-cross: false
+            install-musl: true
             exe: ""
+            run-tests: true
           - cpu: aarch64
             os: linux
             target: aarch64-unknown-linux-musl
             build-on: ubuntu-latest
             use-cross: true
+            install-musl: false
             exe: ""
+            run-tests: false
+          - cpu: aarch64
+            os: macOS
+            target: aarch64-apple-darwin
+            build-on: macos-latest
+            use-cross: true
+            install-musl: false
+            exe: ""
+            run-tests: false
+          - cpu: x86_64
+            os: macOS
+            target: x86_64-apple-darwin
+            build-on: macos-latest
+            use-cross: false
+            install-musl: false
+            exe: ""
+            run-tests: true
+
     name: Build Release ${{ matrix.cpu }} ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
 
-      - name: Install last stable Rust cross compiler
+      - name: Install musl-tools if needed
+        if: ${{ matrix.install-musl }}
+        run: |
+          set -ex
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Install Rust stable toolchain ${{ matrix.target }}
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           target: ${{ matrix.target }}
           override: true
 
-      - name: Build binary
+      - name: Run tests
+        if: ${{ matrix.run-tests }}
         uses: actions-rs/cargo@v1
         with:
-          use-cross: true
+          command: test
+          args: --release --target ${{ matrix.target }} -- --nocapture
+
+      - name: Build binary target/${{ matrix.target }}/release/pipe_downloader
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: ${{ matrix.use-cross }}
           command: build
-          args: --release --target ${{ matrix.target }}
+          args: --release --bin pipe_downloader --target ${{ matrix.target }}
 
       - name: Upload
         uses: svenstaro/upload-release-action@2.3.0
