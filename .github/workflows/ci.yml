@@ -45,6 +45,14 @@ jobs:
             use-cross: false
             install-musl: false
             exe: ""
+          - cpu: aarch64
+            os: macOS
+            target: aarch64-apple-darwin
+            build-on: macos-latest
+            use-cross: true
+            install-musl: false
+            exe: ""
+
     name: Build Release ${{ matrix.cpu }} ${{ matrix.os }}
     steps:
       - name: Checkout
