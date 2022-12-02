@@ -6,16 +6,15 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use rand::{distributions::Alphanumeric, Rng, thread_rng};
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use warp::Filter;
 
-use std::time::Duration;
 use sha256::{digest, try_digest};
+use std::time::Duration;
 use tokio::{join, try_join};
 
 use pipe_downloader_lib::PipeDownloaderOptions;
 use pipe_files::{build_random_name_file, bzip_compress, gzip_compress, lz4_compress, xz_compress};
-
 
 #[derive(Debug, Clone)]
 struct Opt {
@@ -57,10 +56,7 @@ fn rand_str(len: usize) -> String {
 #[tokio::test]
 async fn test_something_async() {
     //let static_dir = "tmp/static".to_string();
-    let static_dir = format!(
-        "tmp/static_{}",
-        rand_str(10)
-    );
+    let static_dir = format!("tmp/static_{}", rand_str(10));
 
     let sd = Path::new(&static_dir);
 
@@ -77,35 +73,21 @@ async fn test_something_async() {
     for i in 0..100 {
         let file_name_str = format!("foo_{}.txt", rand_str(15));
         let file_path = &sd.join(&file_name_str);
-        build_random_name_file(file_path, rand::thread_rng().gen_range(10000..100000)).await.unwrap();
+        build_random_name_file(file_path, rand::thread_rng().gen_range(10000..100000))
+            .await
+            .unwrap();
         let hex_digest = try_digest(file_path.as_path()).unwrap();
         println!("{} {}", hex_digest, &file_name_str);
         file_info_map.insert(file_name_str.clone(), hex_digest);
-        a.append_file(
-            &file_name_str,
-            &mut File::open(file_path).unwrap(),
-        )
-        .unwrap();
-    };
-    let f1 = lz4_compress(
-        sd.join("foo.tar"),
-        sd.join("foo.tar.lz4"),
-    );
-    let f2 = gzip_compress(
-        sd.join("foo.tar"),
-        sd.join("foo.tar.gz"),
-    );
-    let f3 = bzip_compress(
-        sd.join("foo.tar"),
-        sd.join("foo.tar.bz2"),
-    );
-    let f4 = xz_compress(
-        sd.join("foo.tar"),
-        sd.join("foo.tar.xz"),
-    );
+        a.append_file(&file_name_str, &mut File::open(file_path).unwrap())
+            .unwrap();
+    }
+    let f1 = lz4_compress(sd.join("foo.tar"), sd.join("foo.tar.lz4"));
+    let f2 = gzip_compress(sd.join("foo.tar"), sd.join("foo.tar.gz"));
+    let f3 = bzip_compress(sd.join("foo.tar"), sd.join("foo.tar.bz2"));
+    let f4 = xz_compress(sd.join("foo.tar"), sd.join("foo.tar.xz"));
 
     try_join!(f1, f2, f3, f4).unwrap();
-
 
     let opt = Opt {
         serve_dir: PathBuf::from(sd),
@@ -126,15 +108,15 @@ async fn test_something_async() {
             force_no_chunks: false,
             download_threads: 10,
         }
-            .start_download(
-                format!(
-                    "http://{}:{}/static/foo.tar.{}",
-                    opt.listen_addr, opt.listen_port, compr
-                )
-                    .as_str(),
-                &sd.join(format!("output_{}", compr)),
+        .start_download(
+            format!(
+                "http://{}:{}/static/foo.tar.{}",
+                opt.listen_addr, opt.listen_port, compr
             )
-            .unwrap();
+            .as_str(),
+            &sd.join(format!("output_{}", compr)),
+        )
+        .unwrap();
 
         let _current_time = std::time::Instant::now();
         loop {

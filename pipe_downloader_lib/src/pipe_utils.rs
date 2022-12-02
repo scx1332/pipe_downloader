@@ -27,5 +27,3 @@ pub fn resolve_url(
         Ok(download_url)
     }
 }
-
-
