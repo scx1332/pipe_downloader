@@ -77,9 +77,8 @@ jobs:
         if: ${{ matrix.run-tests }}
         uses: actions-rs/cargo@v1
         with:
-          use-cross: ${{ matrix.use-cross }}
           command: test
-          args: --release
+          args: --release --target ${{ matrix.target }} -- --nocapture
 
       - name: Build binary target/${{ matrix.target }}/release/pipe_downloader
         uses: actions-rs/cargo@v1
