@@ -17,13 +17,13 @@ lz4-rust = ["lz4_flex"]
 serde = ["dep:serde"]
 
 [dependencies]
-reqwest = { workspace = true, default-features = false, features = ["blocking"] }
+reqwest = { workspace = true }
 anyhow = { workspace = true }
 lz4 = { workspace = true, optional = true }
 log = { workspace = true }
 flate2 = { workspace = true }
 tar = { workspace = true }
-humansize = { workspace = true, default-features = false, features = ["no_alloc"] }
+humansize = { workspace = true }
 bzip2 = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 lz4_flex = { workspace = true, optional = true }
