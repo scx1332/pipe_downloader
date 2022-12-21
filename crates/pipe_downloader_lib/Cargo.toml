@@ -10,7 +10,7 @@ license.workspace = true
 name = "pipe_downloader_lib"
 
 [features]
-default = ["serde", "with-lz4"]
+default = ["serde", "with-lz4", "https"]
 https = ["reqwest/rustls-tls"]
 with-lz4 = ["lz4"]
 lz4-rust = ["lz4_flex"]
