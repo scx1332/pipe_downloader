@@ -1,6 +1,6 @@
 use crate::tsutils::TimePair;
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
+use serde::{Serialize};
 use std::collections::BTreeMap;
 use std::time;
 use std::time::Instant;
