@@ -41,6 +41,8 @@ rand = "^0.8.5"
 fake = "^2.5.0"
 sha256 = "^1.1.1"
 xz2 = "^0.1.7"
+rust-embed = "6.4.2"
+mime_guess = "2.0.4"
 
 [dependencies]
 pipe_downloader_lib = { path = "crates/pipe_downloader_lib", version = "0.4.4" }
@@ -54,6 +56,9 @@ bzip2 = {workspace = true}
 flate2 = {workspace = true}
 actix-web = { version = "4.1" }
 serde = { workspace = true }
+rust-embed = {workspace = true}
+mime_guess = {workspace = true}
+log = {workspace = true }
 
 [dev-dependencies]
 sha256 = { workspace = true }

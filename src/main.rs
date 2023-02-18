@@ -1,4 +1,5 @@
 mod options;
+mod frontend;
 
 use actix_web::web::{Data};
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
@@ -11,6 +12,8 @@ use serde_json::json;
 use std::thread;
 use std::time::Duration;
 use structopt::StructOpt;
+use crate::frontend::redirect_to_frontend;
+use crate::frontend::frontend_serve;
 
 #[derive(Clone)]
 pub struct ServerData {
@@ -21,7 +24,12 @@ async fn progress_endpoint(_req: HttpRequest, server_data: Data<Box<ServerData>>
     let pd = server_data.pipe_downloader.lock().unwrap();
     web::Json(json!({ "progress": pd.get_progress() }))
 }
-
+pub async fn config(_req: HttpRequest, server_data: Data<Box<ServerData>>) -> impl Responder {
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+    web::Json(
+        json!({"config": {"version": VERSION}}),
+    )
+}
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -44,8 +52,11 @@ async fn main() -> anyhow::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(server_data_cloned.clone())
-            .route("/", web::get().to(HttpResponse::Ok))
             .route("/progress", web::get().to(progress_endpoint))
+            .route("/api/config", web::get().to(config))
+            .route("/", web::get().to(redirect_to_frontend))
+            .route("/frontend", web::get().to(redirect_to_frontend))
+            .route("/frontend/{_:.*}", web::get().to(frontend_serve))
     })
     .workers(1)
     .bind((opt.listen_addr, opt.listen_port))
