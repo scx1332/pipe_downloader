@@ -14,11 +14,12 @@ use anyhow::anyhow;
 use reqwest::blocking::Response;
 use std::time::Duration;
 
-use crate::pipe_progress::InternalProgress;
+use crate::pipe_progress::{DownloadChunkProgress, InternalProgress};
 use crate::pipe_utils::bytes_to_human;
 use crate::pipe_wrapper::DataChunk;
 
 fn download_chunk(
+    chunk_no: usize,
     thread_no: usize,
     progress_context: Arc<Mutex<InternalProgress>>,
     range: &std::ops::Range<usize>,
@@ -45,6 +46,10 @@ fn download_chunk(
         buf_vec.extend_from_slice(&buf[..n]);
         {
             let mut progress_context = progress_context.lock().unwrap();
+
+            if let Some(cc) = progress_context.current_chunks.get_mut(&chunk_no) {
+                cc.downloaded += n;
+            }
             if let Some(cd) = progress_context.chunk_downloaded.get_mut(thread_no) {
                 *cd += n;
             }
@@ -170,6 +175,7 @@ pub fn decode_loop<T: Read>(
         );
         buf.resize(bytes_read, 0);
         let data_chunk = DataChunk {
+            chunk_no: 0,
             data: buf,
             range: unpacked_size - bytes_read..unpacked_size,
         };
@@ -286,6 +292,7 @@ pub fn download_loop(
         //first thread to fill this value (blocking other threads)
         let mut pc = progress_context.lock().unwrap();
         if pc.unfinished_chunks.is_empty() {
+            pc.chunk_size = chunk_size;
             pc.total_chunks = chunk_count;
             pc.unfinished_chunks.reserve(chunk_count);
             for i in (0..chunk_count).rev() {
@@ -323,9 +330,19 @@ pub fn download_loop(
             end: chunk_no * chunk_size + max_length,
         };
         let client = reqwest::blocking::Client::new();
+        {
+            let mut progress = progress_context.lock().unwrap();
+            progress.current_chunks.insert(chunk_no, DownloadChunkProgress{
+                downloaded: 0,
+                to_download: max_length,
+                unpacked: 0,
+                to_unpack: max_length,
+            });
+        }
 
         loop {
             let progress = { progress_context.lock().unwrap().clone() };
+
             if progress.stop_requested {
                 return Err(anyhow::anyhow!("Stop requested"));
             }
@@ -341,6 +358,7 @@ pub fn download_loop(
 
             let result = if let Some(download_response) = &mut download_response {
                 download_chunk(
+                    chunk_no,
                     thread_no,
                     progress_context.clone(),
                     &range,
@@ -362,6 +380,7 @@ pub fn download_loop(
                 match request_chunk(&download_url, &client, &new_range) {
                     Ok(mut new_response) => {
                         let res = download_chunk(
+                            chunk_no,
                             thread_no,
                             progress_context.clone(),
                             &range,
@@ -388,6 +407,7 @@ pub fn download_loop(
                         }
                     }
                     let dc = DataChunk {
+                        chunk_no,
                         range: range.clone(),
                         data: buf,
                     };
@@ -405,6 +425,10 @@ pub fn download_loop(
                         assert!(chunk_no == pc.unfinished_chunks[idx_to_remove]);
                         log::warn!("Removing chunk {} at idx {}", chunk_no, idx_to_remove);
                         pc.unfinished_chunks.remove(idx_to_remove);
+
+
+                        // remove from current chunks - it's easier, because there is only few of them
+                        //pc.current_chunks.remove(&chunk_no);
                     }
                     if let Err(err) = send_download_chunks.send(dc) {
                         log::error!("Error while sending chunk: {:?}", err);

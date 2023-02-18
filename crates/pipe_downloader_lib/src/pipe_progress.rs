@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::tsutils::TimePair;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -85,12 +86,28 @@ impl ProgressHistory {
         }
     }
 }
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadChunkProgress {
+    pub downloaded: usize,
+    pub to_download: usize,
+    pub unpacked: usize,
+    pub to_unpack: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UnpackChunkProgress {
+    pub unpacked: usize,
+    pub to_unpack: usize,
+}
+
 
 #[derive(Debug, Clone)]
 pub struct InternalProgress {
     pub start_time: TimePair,
+    pub chunk_size: usize,
     pub unfinished_chunks: Vec<usize>,
-    pub current_chunks: Vec<usize>,
+    pub current_chunks: BTreeMap<usize, DownloadChunkProgress>,
+    //pub unpack_chunks: BTreeMap<usize, UnpackChunkProgress>,
     pub total_chunks: usize,
     pub total_downloaded: usize,
     pub total_download_size: Option<usize>,
@@ -113,8 +130,10 @@ impl Default for InternalProgress {
     fn default() -> InternalProgress {
         InternalProgress {
             start_time: TimePair::now(),
+            chunk_size: 0,
             unfinished_chunks: vec![],
-            current_chunks: vec![],
+            current_chunks: BTreeMap::new(),
+            //unpack_chunks: BTreeMap::new(),
             total_chunks: 0,
             total_download_size: None,
             total_downloaded: 0,
@@ -143,6 +162,7 @@ impl Default for InternalProgress {
 #[derive(Debug, Clone, Default)]
 pub struct PipeDownloaderProgress {
     pub start_time: chrono::DateTime<chrono::Utc>,
+    pub chunk_size: usize,
     pub downloaded: usize,
     pub unpacked: usize,
     pub stop_requested: bool,
@@ -161,15 +181,17 @@ pub struct PipeDownloaderProgress {
     pub chunks_downloading: usize,
     pub chunks_total: usize,
     pub chunks_left: usize,
-    pub current_chunks: Vec<usize>,
-    pub progress_buckets_download: ProgressHistory,
-    pub progress_buckets_unpack: ProgressHistory,
+    pub current_chunks: BTreeMap<usize, DownloadChunkProgress>,
+   //pub unpack_chunks: BTreeMap<usize, UnpackChunkProgress>,
+    //pub progress_buckets_download: ProgressHistory,
+    //pub progress_buckets_unpack: ProgressHistory,
 }
 
 impl InternalProgress {
     pub fn progress(&self) -> PipeDownloaderProgress {
         PipeDownloaderProgress {
             start_time: self.start_time.to_utc().unwrap(),
+            chunk_size: self.chunk_size,
             downloaded: self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>(),
             unpacked: self.total_unpacked,
             stop_requested: self.stop_requested,
@@ -188,9 +210,10 @@ impl InternalProgress {
             chunks_downloading: self.chunk_downloaded.len(),
             chunks_total: self.total_chunks,
             chunks_left: self.unfinished_chunks.len(),
-            progress_buckets_download: self.progress_buckets_download.clone(),
-            progress_buckets_unpack: self.progress_buckets_unpack.clone(),
+            //progress_buckets_download: self.progress_buckets_download.clone(),
+            //progress_buckets_unpack: self.progress_buckets_unpack.clone(),
             current_chunks: self.current_chunks.clone(),
+            //unpack_chunks: self.unpack_chunks.clone(),
         }
     }
 
