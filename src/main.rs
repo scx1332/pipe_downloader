@@ -1,12 +1,12 @@
 mod options;
 
-use actix_web::web::{Bytes, Data};
-use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder, Scope};
+use actix_web::web::{Data};
+use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use std::sync::{Arc, Mutex};
 
 use crate::options::CliOptions;
 use pipe_downloader_lib::{PipeDownloader, PipeDownloaderOptions};
-use serde::Serialize;
+
 use serde_json::json;
 use std::thread;
 use std::time::Duration;
@@ -17,7 +17,7 @@ pub struct ServerData {
     pub pipe_downloader: Arc<Mutex<PipeDownloader>>,
 }
 
-async fn progress_endpoint(req: HttpRequest, server_data: Data<Box<ServerData>>) -> impl Responder {
+async fn progress_endpoint(_req: HttpRequest, server_data: Data<Box<ServerData>>) -> impl Responder {
     let pd = server_data.pipe_downloader.lock().unwrap();
     web::Json(json!({ "progress": pd.get_progress() }))
 }
