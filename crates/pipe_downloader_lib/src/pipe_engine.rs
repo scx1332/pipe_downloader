@@ -283,7 +283,7 @@ pub fn download_loop(
     let chunk_size = options.chunk_size_downloader;
 
     let chunk_count = match total_length {
-        Some(total_length) => ((total_length - 1) / chunk_size + 1) as usize,
+        Some(total_length) => (total_length - 1) / chunk_size + 1,
         None => 1,
     };
     let total_length = total_length.ok_or_else(|| anyhow!("Content length unknown"))?;
