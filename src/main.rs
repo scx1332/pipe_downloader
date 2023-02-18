@@ -1,16 +1,16 @@
 mod options;
 
-use std::sync::{Arc, Mutex};
 use actix_web::web::{Bytes, Data};
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder, Scope};
+use std::sync::{Arc, Mutex};
 
 use crate::options::CliOptions;
 use pipe_downloader_lib::{PipeDownloader, PipeDownloaderOptions};
+use serde::Serialize;
+use serde_json::json;
 use std::thread;
 use std::time::Duration;
-use serde_json::json;
 use structopt::StructOpt;
-use serde::Serialize;
 
 #[derive(Clone)]
 pub struct ServerData {
@@ -36,12 +36,8 @@ async fn main() -> anyhow::Result<()> {
     }
     .start_download(&opt.url, &opt.output_dir)?;
 
-
-
-
     let server_data = Data::new(Box::new(ServerData {
-        pipe_downloader: Arc::new(Mutex::new(pd
-        )),
+        pipe_downloader: Arc::new(Mutex::new(pd)),
     }));
     let server_data_cloned = server_data.clone();
 
@@ -51,12 +47,12 @@ async fn main() -> anyhow::Result<()> {
             .route("/", web::get().to(HttpResponse::Ok))
             .route("/progress", web::get().to(progress_endpoint))
     })
-        .workers(1)
-        .bind((opt.listen_addr, opt.listen_port))
-        .map_err(anyhow::Error::from)?
-        .run()
-        .await
-        .map_err(anyhow::Error::from)?;
+    .workers(1)
+    .bind((opt.listen_addr, opt.listen_port))
+    .map_err(anyhow::Error::from)?
+    .run()
+    .await
+    .map_err(anyhow::Error::from)?;
 
     let current_time = std::time::Instant::now();
     loop {

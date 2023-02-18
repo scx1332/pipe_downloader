@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
 use crate::tsutils::TimePair;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::time;
 use std::time::Instant;
 
@@ -100,7 +100,6 @@ pub struct UnpackChunkProgress {
     pub to_unpack: usize,
 }
 
-
 #[derive(Debug, Clone)]
 pub struct InternalProgress {
     pub start_time: TimePair,
@@ -154,11 +153,7 @@ impl Default for InternalProgress {
     }
 }
 
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize),
-    serde(rename_all = "camelCase")
-)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "camelCase"))]
 #[derive(Debug, Clone, Default)]
 pub struct PipeDownloaderProgress {
     pub start_time: chrono::DateTime<chrono::Utc>,
@@ -182,7 +177,7 @@ pub struct PipeDownloaderProgress {
     pub chunks_total: usize,
     pub chunks_left: usize,
     pub current_chunks: BTreeMap<usize, DownloadChunkProgress>,
-   //pub unpack_chunks: BTreeMap<usize, UnpackChunkProgress>,
+    //pub unpack_chunks: BTreeMap<usize, UnpackChunkProgress>,
     //pub progress_buckets_download: ProgressHistory,
     //pub progress_buckets_unpack: ProgressHistory,
 }

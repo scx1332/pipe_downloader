@@ -332,12 +332,15 @@ pub fn download_loop(
         let client = reqwest::blocking::Client::new();
         {
             let mut progress = progress_context.lock().unwrap();
-            progress.current_chunks.insert(chunk_no, DownloadChunkProgress{
-                downloaded: 0,
-                to_download: max_length,
-                unpacked: 0,
-                to_unpack: max_length,
-            });
+            progress.current_chunks.insert(
+                chunk_no,
+                DownloadChunkProgress {
+                    downloaded: 0,
+                    to_download: max_length,
+                    unpacked: 0,
+                    to_unpack: max_length,
+                },
+            );
         }
 
         loop {
@@ -420,12 +423,14 @@ pub fn download_loop(
                             .iter()
                             .rposition(|el| *el == chunk_no)
                             .unwrap_or_else(|| {
-                                panic!("Critical error, chunk {} should be in unfinished chunks", chunk_no)
+                                panic!(
+                                    "Critical error, chunk {} should be in unfinished chunks",
+                                    chunk_no
+                                )
                             });
                         assert!(chunk_no == pc.unfinished_chunks[idx_to_remove]);
                         log::warn!("Removing chunk {} at idx {}", chunk_no, idx_to_remove);
                         pc.unfinished_chunks.remove(idx_to_remove);
-
 
                         // remove from current chunks - it's easier, because there is only few of them
                         //pc.current_chunks.remove(&chunk_no);

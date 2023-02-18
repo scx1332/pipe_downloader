@@ -100,7 +100,12 @@ impl PipeDownloader {
             }));
         }
 
-        let mut p = MpscReaderFromReceiver::new(receive_download_chunks, true, self.progress_context.clone(), true);
+        let mut p = MpscReaderFromReceiver::new(
+            receive_download_chunks,
+            true,
+            self.progress_context.clone(),
+            true,
+        );
 
         let (send_unpack_chunks, receive_unpack_chunks) = sync_channel::<DataChunk>(1);
 
@@ -146,7 +151,12 @@ impl PipeDownloader {
             log::info!("Decode loop finished, finishing thread");
         });
 
-        let mut p2 = MpscReaderFromReceiver::new(receive_unpack_chunks, false, self.progress_context.clone(), false);
+        let mut p2 = MpscReaderFromReceiver::new(
+            receive_unpack_chunks,
+            false,
+            self.progress_context.clone(),
+            false,
+        );
 
         let target_path = self.target_path.clone();
         let download_url = url;
