@@ -4,12 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::time;
 use std::time::Instant;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ProgressHistoryEntry {
+    #[serde(skip_serializing)]
     time: time::Instant,
     bytes: usize,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ProgressHistory {
     progress_entries: Vec<ProgressHistoryEntry>,
     max_entries: usize,
@@ -89,6 +90,7 @@ impl ProgressHistory {
 pub struct InternalProgress {
     pub start_time: TimePair,
     pub unfinished_chunks: Vec<usize>,
+    pub current_chunks: Vec<usize>,
     pub total_chunks: usize,
     pub total_downloaded: usize,
     pub total_download_size: Option<usize>,
@@ -112,6 +114,7 @@ impl Default for InternalProgress {
         InternalProgress {
             start_time: TimePair::now(),
             unfinished_chunks: vec![],
+            current_chunks: vec![],
             total_chunks: 0,
             total_download_size: None,
             total_downloaded: 0,
@@ -134,7 +137,7 @@ impl Default for InternalProgress {
 
 #[cfg_attr(
     feature = "serde",
-    derive(Serialize, Deserialize),
+    derive(Serialize),
     serde(rename_all = "camelCase")
 )]
 #[derive(Debug, Clone, Default)]
@@ -158,6 +161,9 @@ pub struct PipeDownloaderProgress {
     pub chunks_downloading: usize,
     pub chunks_total: usize,
     pub chunks_left: usize,
+    pub current_chunks: Vec<usize>,
+    pub progress_buckets_download: ProgressHistory,
+    pub progress_buckets_unpack: ProgressHistory,
 }
 
 impl InternalProgress {
@@ -182,6 +188,9 @@ impl InternalProgress {
             chunks_downloading: self.chunk_downloaded.len(),
             chunks_total: self.total_chunks,
             chunks_left: self.unfinished_chunks.len(),
+            progress_buckets_download: self.progress_buckets_download.clone(),
+            progress_buckets_unpack: self.progress_buckets_unpack.clone(),
+            current_chunks: self.current_chunks.clone(),
         }
     }
 

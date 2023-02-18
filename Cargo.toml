@@ -52,6 +52,8 @@ tar = { workspace = true }
 lz4 = { workspace = true }
 bzip2 = {workspace = true}
 flate2 = {workspace = true}
+actix-web = { version = "4.1" }
+serde = { workspace = true }
 
 [dev-dependencies]
 sha256 = { workspace = true }

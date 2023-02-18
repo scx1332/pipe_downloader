@@ -295,13 +295,13 @@ pub fn download_loop(
         }
     }
 
-    for i in 0..chunk_count {
-        let max_length = std::cmp::min(chunk_size, total_length - i * chunk_size);
+    for chunk_no in 0..chunk_count {
+        let max_length = std::cmp::min(chunk_size, total_length - chunk_no * chunk_size);
         if max_length == 0 {
             break;
         }
         //one thread for one range
-        if i % thread_count != thread_no {
+        if chunk_no % thread_count != thread_no {
             continue;
         }
         loop {
@@ -311,7 +311,7 @@ pub fn download_loop(
                 .unfinished_chunks
                 .last()
                 .expect("Critical error unfinished chunks have to be here");
-            if i - smallest_unfinished > thread_count {
+            if chunk_no - smallest_unfinished > thread_count {
                 //log::warn!("Waiting for chunk {}", i);
                 std::thread::sleep(std::time::Duration::from_millis(100));
                 continue;
@@ -319,8 +319,8 @@ pub fn download_loop(
             break;
         }
         let range = std::ops::Range {
-            start: i * chunk_size,
-            end: i * chunk_size + max_length,
+            start: chunk_no * chunk_size,
+            end: chunk_no * chunk_size + max_length,
         };
         let client = reqwest::blocking::Client::new();
 
@@ -398,12 +398,12 @@ pub fn download_loop(
                         let idx_to_remove = pc
                             .unfinished_chunks
                             .iter()
-                            .rposition(|el| *el == i)
+                            .rposition(|el| *el == chunk_no)
                             .unwrap_or_else(|| {
-                                panic!("Critical error, chunk {} should be in unfinished chunks", i)
+                                panic!("Critical error, chunk {} should be in unfinished chunks", chunk_no)
                             });
-                        assert!(i == pc.unfinished_chunks[idx_to_remove]);
-                        log::warn!("Removing chunk {} at idx {}", i, idx_to_remove);
+                        assert!(chunk_no == pc.unfinished_chunks[idx_to_remove]);
+                        log::warn!("Removing chunk {} at idx {}", chunk_no, idx_to_remove);
                         pc.unfinished_chunks.remove(idx_to_remove);
                     }
                     if let Err(err) = send_download_chunks.send(dc) {

@@ -46,4 +46,12 @@ pub struct CliOptions {
     /// Force only one connection (like when no partial content header is supported by header)
     #[structopt(long = "force-no-partial-content")]
     pub force_no_partial_content: bool,
+
+    /// Listen address
+    #[structopt(long, default_value = "127.0.0.1")]
+    pub listen_addr: String,
+
+    /// Listen port
+    #[structopt(long, default_value = "15100")]
+    pub listen_port: u16,
 }
