@@ -164,7 +164,8 @@ const ProgressPage = () => {
             for (const chunkNo in progress.currentChunks) {
                 if (!(chunkNo in chunkInfos)) {
                     const chunk = progress.currentChunks[chunkNo];
-                    chunkInfos[chunkNo] = new ProgressChunkWrapper(chunk, chunkNo);
+                    const chunkNoInt = parseInt(chunkNo);
+                    chunkInfos[chunkNo] = new ProgressChunkWrapper(chunk, chunkNoInt);
                 }
             }
             setChunkInfos(chunkInfos);
@@ -288,7 +289,7 @@ const ProgressPage = () => {
             </div>
             <div className="progress-page-right">
                 <p>Chunks left: {progress.chunksLeft} finished: {progress.chunksTotal - progress.chunksLeft} Active: {Object.keys(chunkInfos).length}</p>
-                {Object.entries(chunkInfos).reverse().map(([key, chunk]) => row(key, chunk))}
+                {Object.entries(chunkInfos).reverse().map(([key, chunk]) => row(parseInt(key), chunk))}
             </div>
         </div>
     );
