@@ -1,34 +1,35 @@
-mod options;
 mod frontend;
+mod options;
 
-use actix_web::web::{Data};
+use actix_web::web::Data;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use std::sync::{Arc, Mutex};
 
 use crate::options::CliOptions;
 use pipe_downloader_lib::{PipeDownloader, PipeDownloaderOptions};
 
+use crate::frontend::frontend_serve;
+use crate::frontend::redirect_to_frontend;
 use serde_json::json;
 use std::thread;
 use std::time::Duration;
 use structopt::StructOpt;
-use crate::frontend::redirect_to_frontend;
-use crate::frontend::frontend_serve;
 
 #[derive(Clone)]
 pub struct ServerData {
     pub pipe_downloader: Arc<Mutex<PipeDownloader>>,
 }
 
-async fn progress_endpoint(_req: HttpRequest, server_data: Data<Box<ServerData>>) -> impl Responder {
+async fn progress_endpoint(
+    _req: HttpRequest,
+    server_data: Data<Box<ServerData>>,
+) -> impl Responder {
     let pd = server_data.pipe_downloader.lock().unwrap();
     web::Json(json!({ "progress": pd.get_progress() }))
 }
 pub async fn config(_req: HttpRequest, server_data: Data<Box<ServerData>>) -> impl Responder {
     const VERSION: &str = env!("CARGO_PKG_VERSION");
-    web::Json(
-        json!({"config": {"version": VERSION}}),
-    )
+    web::Json(json!({"config": {"version": VERSION}}))
 }
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
@@ -50,13 +51,28 @@ async fn main() -> anyhow::Result<()> {
     let server_data_cloned = server_data.clone();
 
     HttpServer::new(move || {
-        App::new()
+
+        let cors = if opt.add_cors {
+            actix_cors::Cors::default().allow_any_origin()
+                .allow_any_method()
+                .allow_any_header()
+                .max_age(3600)
+        } else {
+            actix_cors::Cors::default()
+        };
+
+        let api_scope = web::scope("/api")
+            .wrap(cors)
             .app_data(server_data_cloned.clone())
             .route("/progress", web::get().to(progress_endpoint))
-            .route("/api/config", web::get().to(config))
+            .route("/config", web::get().to(config));
+
+
+        return App::new()
             .route("/", web::get().to(redirect_to_frontend))
             .route("/frontend", web::get().to(redirect_to_frontend))
             .route("/frontend/{_:.*}", web::get().to(frontend_serve))
+            .service(api_scope);
     })
     .workers(1)
     .bind((opt.listen_addr, opt.listen_port))
@@ -87,7 +103,8 @@ async fn main() -> anyhow::Result<()> {
         //     break;
         // }
 
-        thread::sleep(Duration::from_millis(1000));
+        //
+        tokio::time::sleep(Duration::from_millis(1000)).await;
     }
     let elapsed = current_time.elapsed();
     println!("Unpack finished in: {:?}", elapsed);

@@ -298,7 +298,7 @@ pub fn download_loop(
             for i in (0..chunk_count).rev() {
                 pc.unfinished_chunks.push(i);
             }
-            log::warn!("Unfinished chunks: {:?}", pc.unfinished_chunks);
+            log::debug!("Unfinished chunks: {:?}", pc.unfinished_chunks);
         }
     }
 

@@ -54,4 +54,7 @@ pub struct CliOptions {
     /// Listen port
     #[structopt(long, default_value = "15100")]
     pub listen_port: u16,
+
+    #[structopt(long = "add-cors")]
+    pub add_cors: bool,
 }
