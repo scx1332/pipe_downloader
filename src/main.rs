@@ -2,7 +2,7 @@ mod frontend;
 mod options;
 
 use actix_web::web::Data;
-use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web::{web, App, HttpRequest, HttpServer, Responder};
 use std::sync::{Arc, Mutex};
 
 use crate::options::CliOptions;
@@ -13,17 +13,16 @@ use crate::frontend::redirect_to_frontend;
 use serde_json::json;
 use std::thread;
 use std::time::Duration;
-use actix_web::cookie::time::macros::time;
+
 use actix_web::dev::ServerHandle;
 use structopt::StructOpt;
-use actix_web::rt::System;
 
 #[derive(Clone)]
 pub struct ServerData {
     pub pipe_downloader: Arc<Mutex<PipeDownloader>>,
 }
 
-pub async fn config(_req: HttpRequest, server_data: Data<Box<ServerData>>) -> impl Responder {
+pub async fn config(_req: HttpRequest, _server_data: Data<Box<ServerData>>) -> impl Responder {
     const VERSION: &str = env!("CARGO_PKG_VERSION");
     web::Json(json!({"config": {"version": VERSION}}))
 }
@@ -49,7 +48,7 @@ impl StopHandle {
     /// Sends stop signal through contained server handle.
     pub(crate) fn stop(&self, graceful: bool) {
         #[allow(clippy::let_underscore_future)]
-            let _ = self.inner.lock().unwrap().as_ref().unwrap().stop(graceful);
+        let _ = self.inner.lock().unwrap().as_ref().unwrap().stop(graceful);
     }
 }
 
@@ -72,11 +71,11 @@ async fn main() -> anyhow::Result<()> {
     }));
     let server_data_cloned = server_data.clone();
 
-
     let stop_handle = web::Data::new(StopHandle::default());
     let srv = HttpServer::new(move || {
         let cors = if opt.add_cors {
-            actix_cors::Cors::default().allow_any_origin()
+            actix_cors::Cors::default()
+                .allow_any_origin()
                 .allow_any_method()
                 .allow_any_header()
                 .max_age(3600)
@@ -90,7 +89,6 @@ async fn main() -> anyhow::Result<()> {
             .route("/progress", web::get().to(progress_endpoint))
             .route("/config", web::get().to(config));
 
-
         return App::new()
             .route("/", web::get().to(redirect_to_frontend))
             .route("/frontend", web::get().to(redirect_to_frontend))
@@ -103,7 +101,6 @@ async fn main() -> anyhow::Result<()> {
     .run();
 
     stop_handle.register(srv.handle());
-
 
     let _ = thread::spawn(move || {
         let current_time = std::time::Instant::now();
@@ -139,7 +136,6 @@ async fn main() -> anyhow::Result<()> {
     });
 
     srv.await.map_err(anyhow::Error::from)?;
-
 
     Ok(())
 }

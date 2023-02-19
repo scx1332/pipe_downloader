@@ -1,10 +1,10 @@
 use crate::tsutils::TimePair;
+use chrono::Utc;
 #[cfg(feature = "serde")]
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::time;
 use std::time::Instant;
-use chrono::Utc;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProgressHistoryEntry {
