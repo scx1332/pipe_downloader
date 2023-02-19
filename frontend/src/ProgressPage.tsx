@@ -137,13 +137,16 @@ const ProgressPage = () => {
                             continue;
                         }
                     }
-                    if (!chunkInfo.hidden && DateTime.now().diff(chunkInfo.timeShown, 'seconds').seconds > 3) {
+                    if (!chunkInfo.hidden && DateTime.now().diff(chunkInfo.timeShown, 'seconds').seconds > 2) {
                         chunkInfo.hidden = true;
                         chunkInfo.timeHidden = DateTime.now();
                     }
                 } else {
                     if (chunkNo in progress.currentChunks) {
                         chunkInfo.chunk = progress.currentChunks[chunkNo];
+                    } else {
+                        chunkInfo.chunk.downloaded = chunkInfo.chunk.toDownload;
+                        chunkInfo.chunk.unpacked = chunkInfo.chunk.toUnpack;
                     }
                 }
             }
@@ -195,6 +198,9 @@ const ProgressPage = () => {
     const serverTime = DateTime.fromISO(progress.currentTime);
     const etaSec = progress.etaSec;
     const eta = serverTime.plus({seconds: etaSec});
+    const finishTime = (progress.finishTime) ? DateTime.fromISO(progress.finishTime) : null;
+    const startTime = DateTime.fromISO(progress.startTime);
+
     return (
         <div className="progress-page">
             <div className="progress-page-left">
@@ -213,17 +219,9 @@ const ProgressPage = () => {
                     <input readOnly={true} value={progress.downloadUrl}/>
                 </div>
 
-                {(progress.finishTime) ? <div>
+                {finishTime ? <div>
                     <table>
                         <tbody>
-                        <tr>
-                            <th>Download speed:</th>
-                            <td><HumanBytes bytes={progress.currentDownloadSpeed}/>/s</td>
-                        </tr>
-                        <tr>
-                            <th>Unpack speed:</th>
-                            <td><HumanBytes bytes={progress.currentUnpackSpeed}/>/s</td>
-                        </tr>
                         <tr>
                             <th>Successfully Downloaded:</th>
                             <td><HumanBytes bytes={progress.downloaded}/></td>
@@ -231,6 +229,10 @@ const ProgressPage = () => {
                         <tr>
                             <th>Successfully unpacked:</th>
                             <td><HumanBytes bytes={progress.unpacked}/></td>
+                        </tr>
+                        <tr>
+                            <th>Elapsed time:</th>
+                            <td>{finishTime.diff(startTime).toFormat("hh:mm:ss")}</td>
                         </tr>
                         </tbody>
                     </table>
@@ -250,7 +252,7 @@ const ProgressPage = () => {
                                 <td><HumanBytes bytes={progress.downloaded}/>/<HumanBytes bytes={progress.totalDownloadSize}/></td>
                             </tr>
                             <tr>
-                                <th>Unpack speed:</th>
+                                <th>Unpacked:</th>
                                 <td><HumanBytes bytes={progress.unpacked}/></td>
                             </tr>
                             <tr>
@@ -265,7 +267,7 @@ const ProgressPage = () => {
                 <ProgressBar striped variant="success" now={progressPercent} />
             </div>
             <div className="progress-page-right">
-                <p>Chunks left: {progress.chunksLeft} finished: {progress.chunksTotal - progress.chunksLeft}</p>
+                <p>Chunks left: {progress.chunksLeft} finished: {progress.chunksTotal - progress.chunksLeft} Active: {Object.keys(chunkInfos).length}</p>
                 {Object.entries(chunkInfos).reverse().map(([key, chunk]) => row(key, chunk))}
             </div>
         </div>

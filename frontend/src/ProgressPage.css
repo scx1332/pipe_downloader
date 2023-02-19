@@ -56,5 +56,14 @@ div.download-url input {
     font-size: 0.8rem;
 }
 table td {
-    padding-right: 0.4rem;
+    font-weight: bold;
+    padding: 0.1rem 0.4rem;
+    font-size: 1.1rem;
 }
+table th {
+    font-weight: normal;
+    text-align: right;
+    padding: 0.1rem 0.1rem;
+    font-size: 0.9rem;
+}
+

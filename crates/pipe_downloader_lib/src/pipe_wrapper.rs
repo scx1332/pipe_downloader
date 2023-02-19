@@ -92,7 +92,7 @@ impl Read for MpscReaderFromReceiver {
             self.current_buf_pos = 0;
             if self.is_unpack {
                 //keep chunk hisotry
-                let chunk_history = 10;
+                let chunk_history = 1;
                 if self.current_chunk_no >= chunk_history {
                     let mut pc = self.progress_context.lock().unwrap();
                     pc.current_chunks
