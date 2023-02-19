@@ -2,6 +2,23 @@
     padding: 1rem;
 }
 .progress-chunk {
-    padding: 1rem;
     border: 1px solid #dddddd;
+    transform-origin: top;
+    transition: height 0.5s ease;
+    overflow: hidden;
+}
+.progress-chunk-hidden {
+    height: 0rem;
+}
+.progress-chunk-visible {
+    height: 5rem;
+}
+.progress-chunk-inner {
+    padding: 1rem;
+}
+.progress-chunk-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
 }

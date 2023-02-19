@@ -86,16 +86,11 @@ impl ProgressHistory {
         }
     }
 }
-#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "camelCase"))]
+#[derive(Debug, Clone)]
 pub struct DownloadChunkProgress {
     pub downloaded: usize,
     pub to_download: usize,
-    pub unpacked: usize,
-    pub to_unpack: usize,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct UnpackChunkProgress {
     pub unpacked: usize,
     pub to_unpack: usize,
 }

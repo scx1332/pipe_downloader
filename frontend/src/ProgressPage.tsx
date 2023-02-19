@@ -7,14 +7,36 @@ import load = Simulate.load;
 import {backendFetch} from "./common/BackendCall";
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import 'bootstrap/dist/css/bootstrap.min.css';
-
+import Collapse from 'react-bootstrap/Collapse';
+import Fade from 'react-bootstrap/Fade';
+import {DateTime} from "luxon";
 
 interface ProgressChunk {
     downloaded: number;
-    to_download: number;
-    to_unpack: number;
+    toDownload: number;
+    toUnpack: number;
     unpacked: number;
 }
+
+class ProgressChunkWrapper {
+    chunk: ProgressChunk;
+    chunkNo: number;
+
+    hidden: boolean;
+
+    timeShown: DateTime;
+
+    timeHidden: DateTime | null;
+
+    constructor(chunk: ProgressChunk, chunkNo: number) {
+        this.chunk = chunk;
+        this.chunkNo = chunkNo;
+        this.hidden = false;
+        this.timeShown = DateTime.now();
+        this.timeHidden = null;
+    }
+}
+
 
 interface Progress {
     chunkSize: number;
@@ -42,21 +64,43 @@ interface Progress {
 }
 
 interface ProgressChunkProps {
-    chunk_no: number;
-    chunk: ProgressChunk;
+    chunkWrapper: ProgressChunkWrapper;
 }
-const ProgressChunk = (props: ProgressChunkProps) => {
-    const chunk = props.chunk;
 
-    const progressPercent = chunk.downloaded / chunk.to_download * 100;
-    return <div className={"progress-chunk"}>
-        <div>Chunk no {props.chunk_no}</div>
-        <div>Downloaded: {chunk.downloaded}</div>
-        <div>To download: {chunk.to_download}</div>
-        <div>To unpack: {chunk.to_unpack}</div>
-        <div>Unpacked: {chunk.unpacked}</div>
-        <ProgressBar striped variant="success" now={progressPercent} />
-    </div>
+
+const ProgressChunk = (props: ProgressChunkProps) => {
+    const chunkNo = props.chunkWrapper.chunkNo;
+    const chunk = props.chunkWrapper.chunk;
+
+    const [visible, setVisible] = useState(false);
+
+    React.useEffect(() => {
+        setTimeout(() => {
+            setVisible(!props.chunkWrapper.hidden);
+        }, 100);
+    }, [props.chunkWrapper.hidden]);
+
+    const progressPercent = chunk.downloaded / chunk.toDownload * 100;
+
+    let className = "progress-chunk";
+    if (visible) {
+        className += " progress-chunk-visible";
+    } else {
+        className += " progress-chunk-hidden";
+    }
+
+    return <div className={className}>
+            <div className={"progress-chunk-inner"}>
+                <div className={"progress-chunk-header"}>
+                    <div>Chunk no {chunkNo}</div>
+                    <div>Downloaded: {chunk.downloaded}</div>
+                    <div>To download: {chunk.toDownload}</div>
+                    <div>To unpack: {chunk.toUnpack}</div>
+                    <div>Unpacked: {chunk.unpacked}</div>
+                </div>
+                <ProgressBar striped variant="success" now={progressPercent} />
+            </div>
+        </div>
 };
 
 const ProgressPage = () => {
@@ -65,17 +109,47 @@ const ProgressPage = () => {
     const [progress, setProgress] = useState<Progress | null>(null);
 
     const [nextRefresh, setNextRefresh] = useState(0);
+    const [chunkInfos, setChunkInfos] = useState<{ [key: number]: ProgressChunkWrapper }>({})
 
     const loadProgress = useCallback(async () => {
         try {
             const response = await backendFetch(backendSettings, `/progress`);
             const response_json = await response.json();
+            const progress : Progress = response_json.progress;
             setProgress(response_json.progress);
+
+            for (const chunkNo in chunkInfos) {
+                const chunkInfo = chunkInfos[chunkNo];
+                if (chunkInfo.chunk.downloaded == chunkInfo.chunk.toDownload && chunkInfo.chunk.unpacked == chunkInfo.chunk.toUnpack) {
+                    if (chunkInfo.timeHidden && DateTime.now().diff(chunkInfo.timeHidden, 'seconds').seconds > 3) {
+                        if (!(chunkNo in progress.currentChunks)) {
+                            delete chunkInfos[chunkNo];
+                            continue;
+                        }
+                    }
+                    if (!chunkInfo.hidden && DateTime.now().diff(chunkInfo.timeShown, 'seconds').seconds > 3) {
+                        chunkInfo.hidden = true;
+                        chunkInfo.timeHidden = DateTime.now();
+                    }
+                } else {
+                    if (chunkNo in progress.currentChunks) {
+                        chunkInfo.chunk = progress.currentChunks[chunkNo];
+                    }
+                }
+            }
+
+            for (const chunkNo in progress.currentChunks) {
+                if (!(chunkNo in chunkInfos)) {
+                    const chunk = progress.currentChunks[chunkNo];
+                    chunkInfos[chunkNo] = new ProgressChunkWrapper(chunk, chunkNo);
+                }
+            }
+            setChunkInfos(chunkInfos);
         } catch (e) {
             console.log(e);
             setProgress(null);
         }
-    }, [setProgress]);
+    }, [setProgress, chunkInfos, setChunkInfos]);
 
     React.useEffect(() => {
         console.log("Refreshing dashboard...");
@@ -101,8 +175,8 @@ const ProgressPage = () => {
     }
     const progressPercent = progress.downloaded/progress.totalDownloadSize * 100;
 
-    function row(key: number, chunk: ProgressChunk ) {
-        return <ProgressChunk key={key} chunk_no={key} chunk={chunk} />;
+    function row(key: number, chunk: ProgressChunkWrapper ) {
+        return <ProgressChunk key={key} chunkWrapper={chunk} />;
     }
 
     return (
@@ -116,7 +190,7 @@ const ProgressPage = () => {
             <p>Downloaded: {progress.downloaded}/{progress.totalDownloadSize}</p>
             <p>Unpacked: {progress.unpacked}</p>
             <ProgressBar striped variant="success" now={progressPercent} />
-            {Object.entries(progress.currentChunks).map(([key, chunk]) => row(key, chunk))}
+            {Object.entries(chunkInfos).reverse().map(([key, chunk]) => row(key, chunk))}
         </div>
     );
 };
