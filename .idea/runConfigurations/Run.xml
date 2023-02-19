@@ -1,6 +1,6 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Run" type="CargoCommandRunConfiguration" factoryName="Cargo Command" nameIsGenerated="true">
-    <option name="command" value="run -- --output-dir linux-6.0.4 --url=https://archive.golem.network/static/test/freezer.tar.lz4 --add-cors=true" />
+    <option name="command" value="run -- --output-dir linux-6.0.4 --url=https://archive.golem.network/static/test/freezer.tar.lz4 --add-cors=true --download-threads=8" />
     <option name="workingDirectory" value="file://$PROJECT_DIR$" />
     <option name="emulateTerminal" value="false" />
     <option name="channel" value="DEFAULT" />

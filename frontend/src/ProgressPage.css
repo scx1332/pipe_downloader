@@ -34,7 +34,9 @@
 .progress-page-right {
     display: flex;
     flex-direction: column;
+    min-width: 20rem;
 }
+
 .progress-page-dates {
     display: flex;
     flex-direction: row;

@@ -120,6 +120,32 @@ const ProgressPage = () => {
 
     const [nextRefresh, setNextRefresh] = useState(0);
     const [chunkInfos, setChunkInfos] = useState<{ [key: number]: ProgressChunkWrapper }>({})
+    const [finished, setFinished] = useState(false);
+
+    const updateChunks = useCallback( (progress: Progress) => {
+        for (const chunkNo in chunkInfos) {
+            const chunkInfo = chunkInfos[chunkNo];
+            if (chunkInfo.chunk.downloaded == chunkInfo.chunk.toDownload && chunkInfo.chunk.unpacked == chunkInfo.chunk.toUnpack) {
+                if (chunkInfo.timeHidden && DateTime.now().diff(chunkInfo.timeHidden, 'seconds').seconds > 3) {
+                    if (!(chunkNo in progress.currentChunks)) {
+                        delete chunkInfos[chunkNo];
+                        continue;
+                    }
+                }
+                if (!chunkInfo.hidden && DateTime.now().diff(chunkInfo.timeShown, 'seconds').seconds > 2) {
+                    chunkInfo.hidden = true;
+                    chunkInfo.timeHidden = DateTime.now();
+                }
+            } else {
+                if (chunkNo in progress.currentChunks) {
+                    chunkInfo.chunk = progress.currentChunks[chunkNo];
+                } else {
+                    chunkInfo.chunk.downloaded = chunkInfo.chunk.toDownload;
+                    chunkInfo.chunk.unpacked = chunkInfo.chunk.toUnpack;
+                }
+            }
+        }
+    }, [setProgress, chunkInfos, setChunkInfos, setFinished]);
 
     const loadProgress = useCallback(async () => {
         try {
@@ -128,27 +154,11 @@ const ProgressPage = () => {
             const progress : Progress = response_json.progress;
             setProgress(response_json.progress);
 
-            for (const chunkNo in chunkInfos) {
-                const chunkInfo = chunkInfos[chunkNo];
-                if (chunkInfo.chunk.downloaded == chunkInfo.chunk.toDownload && chunkInfo.chunk.unpacked == chunkInfo.chunk.toUnpack) {
-                    if (chunkInfo.timeHidden && DateTime.now().diff(chunkInfo.timeHidden, 'seconds').seconds > 3) {
-                        if (!(chunkNo in progress.currentChunks)) {
-                            delete chunkInfos[chunkNo];
-                            continue;
-                        }
-                    }
-                    if (!chunkInfo.hidden && DateTime.now().diff(chunkInfo.timeShown, 'seconds').seconds > 2) {
-                        chunkInfo.hidden = true;
-                        chunkInfo.timeHidden = DateTime.now();
-                    }
-                } else {
-                    if (chunkNo in progress.currentChunks) {
-                        chunkInfo.chunk = progress.currentChunks[chunkNo];
-                    } else {
-                        chunkInfo.chunk.downloaded = chunkInfo.chunk.toDownload;
-                        chunkInfo.chunk.unpacked = chunkInfo.chunk.toUnpack;
-                    }
-                }
+            updateChunks(response_json.progress);
+
+            const finishTime = (progress.finishTime) ? DateTime.fromISO(progress.finishTime) : null;
+            if (finishTime){
+                setFinished(true);
             }
 
             for (const chunkNo in progress.currentChunks) {
@@ -162,18 +172,26 @@ const ProgressPage = () => {
             console.log(e);
             setProgress(null);
         }
-    }, [setProgress, chunkInfos, setChunkInfos]);
+    }, [setProgress, chunkInfos, setChunkInfos, setFinished]);
 
     React.useEffect(() => {
-        console.log("Refreshing dashboard...");
         //timeout
         //sleep
-        loadProgress().then(() => {
+        if (!finished) {
+            loadProgress().then(() => {
+                setTimeout(() => {
+                    setNextRefresh(nextRefresh + 1);
+                }, 1000);
+            });
+        } else {
             setTimeout(() => {
                 setNextRefresh(nextRefresh + 1);
-            }, 500);
-        });
-    }, [setNextRefresh, nextRefresh, loadProgress]);
+                if (progress) {
+                    updateChunks(progress);
+                }
+            }, 1000);
+        }
+    }, [finished, setNextRefresh, nextRefresh, loadProgress]);
 
 
     function row(key: number, chunk: ProgressChunkWrapper ) {
@@ -193,6 +211,8 @@ const ProgressPage = () => {
         );
     }
     const isFinished = progress.finished;
+
+
 
     const progressPercent = progress.downloaded/progress.totalDownloadSize * 100;
     const serverTime = DateTime.fromISO(progress.currentTime);

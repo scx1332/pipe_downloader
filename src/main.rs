@@ -119,8 +119,6 @@ async fn main() -> anyhow::Result<()> {
                     println!("{}", pd.get_progress_human_line());
                 }
                 if pd.is_finished() {
-                    log::debug!("Waiting after finish: {} sec", opt.wait_after_finish_sec);
-                    std::thread::sleep(Duration::from_secs(opt.wait_after_finish_sec));
                     break;
                 }
             }
@@ -135,6 +133,8 @@ async fn main() -> anyhow::Result<()> {
         }
         let elapsed = current_time.elapsed();
         println!("Unpack finished in: {:?}", elapsed);
+        println!("Waiting after finish: {} sec", opt.wait_after_finish_sec);
+        std::thread::sleep(Duration::from_secs(opt.wait_after_finish_sec));
         stop_handle.stop(true);
     });
 
