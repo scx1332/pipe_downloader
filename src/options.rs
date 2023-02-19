@@ -39,9 +39,9 @@ pub struct CliOptions {
     #[structopt(long = "json")]
     pub json: bool,
 
-    /// For debugging purposes
-    #[structopt(long = "run-after-finish")]
-    pub run_after_finish: bool,
+    /// For server
+    #[structopt(long = "wait-after-finish-sec", default_value = "10")]
+    pub wait_after_finish_sec: u64,
 
     /// Force only one connection (like when no partial content header is supported by header)
     #[structopt(long = "force-no-partial-content")]

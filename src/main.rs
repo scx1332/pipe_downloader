@@ -13,13 +13,20 @@ use crate::frontend::redirect_to_frontend;
 use serde_json::json;
 use std::thread;
 use std::time::Duration;
+use actix_web::cookie::time::macros::time;
+use actix_web::dev::ServerHandle;
 use structopt::StructOpt;
+use actix_web::rt::System;
 
 #[derive(Clone)]
 pub struct ServerData {
     pub pipe_downloader: Arc<Mutex<PipeDownloader>>,
 }
 
+pub async fn config(_req: HttpRequest, server_data: Data<Box<ServerData>>) -> impl Responder {
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+    web::Json(json!({"config": {"version": VERSION}}))
+}
 async fn progress_endpoint(
     _req: HttpRequest,
     server_data: Data<Box<ServerData>>,
@@ -27,10 +34,25 @@ async fn progress_endpoint(
     let pd = server_data.pipe_downloader.lock().unwrap();
     web::Json(json!({ "progress": pd.get_progress() }))
 }
-pub async fn config(_req: HttpRequest, server_data: Data<Box<ServerData>>) -> impl Responder {
-    const VERSION: &str = env!("CARGO_PKG_VERSION");
-    web::Json(json!({"config": {"version": VERSION}}))
+
+#[derive(Default)]
+struct StopHandle {
+    inner: std::sync::Mutex<Option<ServerHandle>>,
 }
+
+impl StopHandle {
+    /// Sets the server handle to stop.
+    pub(crate) fn register(&self, handle: ServerHandle) {
+        *self.inner.lock().unwrap() = Some(handle);
+    }
+
+    /// Sends stop signal through contained server handle.
+    pub(crate) fn stop(&self, graceful: bool) {
+        #[allow(clippy::let_underscore_future)]
+            let _ = self.inner.lock().unwrap().as_ref().unwrap().stop(graceful);
+    }
+}
+
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -50,8 +72,9 @@ async fn main() -> anyhow::Result<()> {
     }));
     let server_data_cloned = server_data.clone();
 
-    HttpServer::new(move || {
 
+    let stop_handle = web::Data::new(StopHandle::default());
+    let srv = HttpServer::new(move || {
         let cors = if opt.add_cors {
             actix_cors::Cors::default().allow_any_origin()
                 .allow_any_method()
@@ -77,36 +100,46 @@ async fn main() -> anyhow::Result<()> {
     .workers(1)
     .bind((opt.listen_addr, opt.listen_port))
     .map_err(anyhow::Error::from)?
-    .run()
-    .await
-    .map_err(anyhow::Error::from)?;
+    .run();
 
-    let current_time = std::time::Instant::now();
-    loop {
-        {
-            let pd = server_data.pipe_downloader.lock().unwrap();
-            if opt.json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&pd.get_progress()).unwrap()
-                )
-            } else {
-                println!("{}", pd.get_progress_human_line());
+    stop_handle.register(srv.handle());
+
+
+    let _ = thread::spawn(move || {
+        let current_time = std::time::Instant::now();
+        loop {
+            {
+                let pd = server_data.pipe_downloader.lock().unwrap();
+                if opt.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&pd.get_progress()).unwrap()
+                    )
+                } else {
+                    println!("{}", pd.get_progress_human_line());
+                }
+                if pd.is_finished() {
+                    log::debug!("Waiting after finish: {} sec", opt.wait_after_finish_sec);
+                    std::thread::sleep(Duration::from_secs(opt.wait_after_finish_sec));
+                    break;
+                }
             }
-            if !opt.run_after_finish && pd.is_finished() {
-                break;
-            }
+            // test pause
+            // if elapsed.as_secs() > 30 {
+            //     pd.pause_download();
+            //     break;
+            // }
+
+            //
+            thread::sleep(Duration::from_millis(1000));
         }
-        // test pause
-        // if elapsed.as_secs() > 30 {
-        //     pd.pause_download();
-        //     break;
-        // }
+        let elapsed = current_time.elapsed();
+        println!("Unpack finished in: {:?}", elapsed);
+        stop_handle.stop(true);
+    });
 
-        //
-        tokio::time::sleep(Duration::from_millis(1000)).await;
-    }
-    let elapsed = current_time.elapsed();
-    println!("Unpack finished in: {:?}", elapsed);
+    srv.await.map_err(anyhow::Error::from)?;
+
+
     Ok(())
 }
