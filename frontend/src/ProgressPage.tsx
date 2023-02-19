@@ -10,6 +10,8 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import Collapse from 'react-bootstrap/Collapse';
 import Fade from 'react-bootstrap/Fade';
 import {DateTime} from "luxon";
+import prettyBytes from "pretty-bytes";
+import DateBox from "./DateBox";
 
 interface ProgressChunk {
     downloaded: number;
@@ -54,9 +56,10 @@ interface Progress {
     errorMessageDownload: string | null;
     errorMessageUnpack: string | null;
     etaSec: number;
-    finishTime: string;
+    finishTime: string | null;
     paused: boolean;
     startTime: string;
+    currentTime: string;
     stopRequested: boolean;
     totalDownloadSize: number;
     totalUnpackSize: number;
@@ -67,6 +70,13 @@ interface ProgressChunkProps {
     chunkWrapper: ProgressChunkWrapper;
 }
 
+
+const HumanBytes = (props: { bytes: number }) => {
+    const bytesToHuman = (bytes: number) => {
+        return prettyBytes(bytes, {minimumFractionDigits: 3})
+    }
+    return <span title={`${props.bytes} bytes`}>{bytesToHuman(props.bytes)}</span>
+}
 
 const ProgressChunk = (props: ProgressChunkProps) => {
     const chunkNo = props.chunkWrapper.chunkNo;
@@ -89,14 +99,14 @@ const ProgressChunk = (props: ProgressChunkProps) => {
         className += " progress-chunk-hidden";
     }
 
+
+
     return <div className={className}>
             <div className={"progress-chunk-inner"}>
                 <div className={"progress-chunk-header"}>
                     <div>Chunk no {chunkNo}</div>
-                    <div>Downloaded: {chunk.downloaded}</div>
-                    <div>To download: {chunk.toDownload}</div>
-                    <div>To unpack: {chunk.toUnpack}</div>
-                    <div>Unpacked: {chunk.unpacked}</div>
+                    <div>Downloaded: <HumanBytes bytes={chunk.downloaded}/>/<HumanBytes bytes={chunk.toDownload}/></div>
+                    <div>Unpack: <HumanBytes bytes={chunk.toUnpack}/>/<HumanBytes bytes={chunk.unpacked}/></div>
                 </div>
                 <ProgressBar striped variant="success" now={progressPercent} />
             </div>
@@ -158,9 +168,15 @@ const ProgressPage = () => {
         loadProgress().then(() => {
             setTimeout(() => {
                 setNextRefresh(nextRefresh + 1);
-            }, 2000);
+            }, 500);
         });
     }, [setNextRefresh, nextRefresh, loadProgress]);
+
+
+    function row(key: number, chunk: ProgressChunkWrapper ) {
+        return <ProgressChunk key={key} chunkWrapper={chunk} />;
+    }
+
 
     if (progress == null) {
         return (
@@ -173,24 +189,85 @@ const ProgressPage = () => {
             </div>
         );
     }
+    const isFinished = progress.finished;
+
     const progressPercent = progress.downloaded/progress.totalDownloadSize * 100;
-
-    function row(key: number, chunk: ProgressChunkWrapper ) {
-        return <ProgressChunk key={key} chunkWrapper={chunk} />;
-    }
-
+    const serverTime = DateTime.fromISO(progress.currentTime);
+    const etaSec = progress.etaSec;
+    const eta = serverTime.plus({seconds: etaSec});
     return (
         <div className="progress-page">
-            <h1>Vite template</h1>
-            <p>Connected to the endpoint {backendSettings.backendUrl}</p>
-            <p>Frontend version {APP_VERSION}</p>
-            <p>Backend version {config.version}</p>
+            <div className="progress-page-left">
+                <h4>Pipe downloader {config.version}</h4>
+                <p>endpoint {backendSettings.backendUrl}</p>
+                <div className={"progress-page-dates"}>
+                    <DateBox date={progress.startTime} title={"Start time"} minimal={false}/>
+                    <DateBox date={progress.currentTime} title={"Update time"} minimal={false}/>
+                    {(progress.finishTime) ?  <DateBox date={progress.finishTime} title={"Finish time"} minimal={false}/>
+                    :<DateBox date={eta.toISO()} title={"Estimated finish"} minimal={false}/>}
+                </div>
 
-            <p>Downloading file: {progress.downloadUrl}</p>
-            <p>Downloaded: {progress.downloaded}/{progress.totalDownloadSize}</p>
-            <p>Unpacked: {progress.unpacked}</p>
-            <ProgressBar striped variant="success" now={progressPercent} />
-            {Object.entries(chunkInfos).reverse().map(([key, chunk]) => row(key, chunk))}
+
+                <div className={"download-url"} >
+                    <div className={"header"}>Downloading file:</div>
+                    <input readOnly={true} value={progress.downloadUrl}/>
+                </div>
+
+                {(progress.finishTime) ? <div>
+                    <table>
+                        <tbody>
+                        <tr>
+                            <th>Download speed:</th>
+                            <td><HumanBytes bytes={progress.currentDownloadSpeed}/>/s</td>
+                        </tr>
+                        <tr>
+                            <th>Unpack speed:</th>
+                            <td><HumanBytes bytes={progress.currentUnpackSpeed}/>/s</td>
+                        </tr>
+                        <tr>
+                            <th>Successfully Downloaded:</th>
+                            <td><HumanBytes bytes={progress.downloaded}/></td>
+                        </tr>
+                        <tr>
+                            <th>Successfully unpacked:</th>
+                            <td><HumanBytes bytes={progress.unpacked}/></td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div> : <div>
+                    <table>
+                        <tbody>
+                            <tr>
+                                <th>Download speed:</th>
+                                <td><HumanBytes bytes={progress.currentDownloadSpeed}/>/s</td>
+                            </tr>
+                            <tr>
+                                <th>Unpack speed:</th>
+                                <td><HumanBytes bytes={progress.currentUnpackSpeed}/>/s</td>
+                            </tr>
+                            <tr>
+                                <th>Downloaded:</th>
+                                <td><HumanBytes bytes={progress.downloaded}/>/<HumanBytes bytes={progress.totalDownloadSize}/></td>
+                            </tr>
+                            <tr>
+                                <th>Unpack speed:</th>
+                                <td><HumanBytes bytes={progress.unpacked}/></td>
+                            </tr>
+                            <tr>
+                                <th>Percent downloaded:</th>
+                                <td>{progressPercent.toFixed(5)}%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                }
+
+                <ProgressBar striped variant="success" now={progressPercent} />
+            </div>
+            <div className="progress-page-right">
+                <p>Chunks left: {progress.chunksLeft} finished: {progress.chunksTotal - progress.chunksLeft}</p>
+                {Object.entries(chunkInfos).reverse().map(([key, chunk]) => row(key, chunk))}
+            </div>
         </div>
     );
 };

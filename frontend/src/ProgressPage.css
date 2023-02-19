@@ -1,11 +1,14 @@
 .progress-page {
     padding: 1rem;
+    display: flex;
+    flex-direction: row;
 }
 .progress-chunk {
     border: 1px solid #dddddd;
     transform-origin: top;
     transition: height 0.5s ease;
     overflow: hidden;
+    min-width: 60rem;
 }
 .progress-chunk-hidden {
     height: 0rem;
@@ -21,4 +24,37 @@
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
+}
+.progress-page-left {
+    width: 25rem;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+}
+.progress-page-right {
+    display: flex;
+    flex-direction: column;
+}
+.progress-page-dates {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+div.download-url {
+    margin: 1rem 0 0.5rem 0;
+}
+div.download-url div.header {
+    font-weight: bold;
+    font-size: 0.8rem;
+}
+div.download-url input {
+    width: 100%;
+    padding: 0rem;
+    border: 0px;
+    border-radius: 0.2rem;
+    font-size: 0.8rem;
+}
+table td {
+    padding-right: 0.4rem;
 }

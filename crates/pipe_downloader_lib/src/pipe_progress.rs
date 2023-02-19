@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::time;
 use std::time::Instant;
+use chrono::Utc;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProgressHistoryEntry {
@@ -151,7 +152,8 @@ impl Default for InternalProgress {
 #[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "camelCase"))]
 #[derive(Debug, Clone, Default)]
 pub struct PipeDownloaderProgress {
-    pub start_time: chrono::DateTime<chrono::Utc>,
+    pub start_time: chrono::DateTime<Utc>,
+    pub current_time: chrono::DateTime<chrono::Utc>,
     pub chunk_size: usize,
     pub downloaded: usize,
     pub unpacked: usize,
@@ -181,6 +183,7 @@ impl InternalProgress {
     pub fn progress(&self) -> PipeDownloaderProgress {
         PipeDownloaderProgress {
             start_time: self.start_time.to_utc().unwrap(),
+            current_time: TimePair::now().to_utc().unwrap(),
             chunk_size: self.chunk_size,
             downloaded: self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>(),
             unpacked: self.total_unpacked,
