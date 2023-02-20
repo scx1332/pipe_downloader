@@ -47,6 +47,10 @@ pub struct CliOptions {
     #[structopt(long = "force-no-partial-content")]
     pub force_no_partial_content: bool,
 
+    /// No web UI/backend
+    #[structopt(long = "cli-only")]
+    pub cli_only: bool,
+
     /// Listen address
     #[structopt(long, default_value = "127.0.0.1")]
     pub listen_addr: String,

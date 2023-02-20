@@ -34,21 +34,22 @@ async fn progress_endpoint(
     web::Json(json!({ "progress": pd.get_progress() }))
 }
 
-#[derive(Default)]
+
 struct StopHandle {
-    inner: std::sync::Mutex<Option<ServerHandle>>,
+    inner: std::sync::Mutex<ServerHandle>,
 }
 
 impl StopHandle {
-    /// Sets the server handle to stop.
-    pub(crate) fn register(&self, handle: ServerHandle) {
-        *self.inner.lock().unwrap() = Some(handle);
+    pub fn new(handle: ServerHandle) -> Self {
+        StopHandle {
+            inner: std::sync::Mutex::new(handle),
+        }
     }
 
     /// Sends stop signal through contained server handle.
     pub(crate) fn stop(&self, graceful: bool) {
         #[allow(clippy::let_underscore_future)]
-        let _ = self.inner.lock().unwrap().as_ref().unwrap().stop(graceful);
+        let _ = self.inner.lock().unwrap().stop(graceful);
     }
 }
 
@@ -71,38 +72,44 @@ async fn main() -> anyhow::Result<()> {
     }));
     let server_data_cloned = server_data.clone();
 
-    let stop_handle = web::Data::new(StopHandle::default());
-    let srv = HttpServer::new(move || {
-        let cors = if opt.add_cors {
-            actix_cors::Cors::default()
-                .allow_any_origin()
-                .allow_any_method()
-                .allow_any_header()
-                .max_age(3600)
-        } else {
-            actix_cors::Cors::default()
-        };
+    let (srv, stop_handle) = if opt.cli_only {
+        (None, None)
+    } else {
+        let srv =
+            HttpServer::new(move || {
+                let cors = if opt.add_cors {
+                    actix_cors::Cors::default()
+                        .allow_any_origin()
+                        .allow_any_method()
+                        .allow_any_header()
+                        .max_age(3600)
+                } else {
+                    actix_cors::Cors::default()
+                };
 
-        let api_scope = web::scope("/api")
-            .wrap(cors)
-            .app_data(server_data_cloned.clone())
-            .route("/progress", web::get().to(progress_endpoint))
-            .route("/config", web::get().to(config));
+                let api_scope = web::scope("/api")
+                    .wrap(cors)
+                    .app_data(server_data_cloned.clone())
+                    .route("/progress", web::get().to(progress_endpoint))
+                    .route("/config", web::get().to(config));
 
-        return App::new()
-            .route("/", web::get().to(redirect_to_frontend))
-            .route("/frontend", web::get().to(redirect_to_frontend))
-            .route("/frontend/{_:.*}", web::get().to(frontend_serve))
-            .service(api_scope);
-    })
-    .workers(1)
-    .bind((opt.listen_addr, opt.listen_port))
-    .map_err(anyhow::Error::from)?
-    .run();
+                return App::new()
+                    .route("/", web::get().to(redirect_to_frontend))
+                    .route("/frontend", web::get().to(redirect_to_frontend))
+                    .route("/frontend/{_:.*}", web::get().to(frontend_serve))
+                    .service(api_scope);
+            })
+                .workers(1)
+                .bind((opt.listen_addr.clone(), opt.listen_port.clone()))
+                .map_err(anyhow::Error::from)?
+                .run();
+        let st_handle = StopHandle::new(srv.handle());
+        (Some(srv), Some(st_handle))
+    };
 
-    stop_handle.register(srv.handle());
 
-    let _ = thread::spawn(move || {
+
+    let sp_thread = tokio::spawn(async move {
         let current_time = std::time::Instant::now();
         loop {
             {
@@ -130,12 +137,25 @@ async fn main() -> anyhow::Result<()> {
         }
         let elapsed = current_time.elapsed();
         println!("Unpack finished in: {:?}", elapsed);
-        println!("Waiting after finish: {} sec", opt.wait_after_finish_sec);
-        std::thread::sleep(Duration::from_secs(opt.wait_after_finish_sec));
-        stop_handle.stop(true);
+        if let Some(stop_handle) = stop_handle {
+            println!("Waiting after finish: {} sec", opt.wait_after_finish_sec);
+            std::thread::sleep(Duration::from_secs(opt.wait_after_finish_sec));
+            stop_handle.stop(true);
+        }
     });
 
-    srv.await.map_err(anyhow::Error::from)?;
-
+    if let Some(srv) = srv {
+        println!("Frontend started at http://{}:{}", opt.listen_addr, opt.listen_port);
+        //Await actix_web server if it was started
+        srv.await.map_err(anyhow::Error::from)?;
+    }
+    match sp_thread.await {
+        Ok(_) => {
+            log::info!("Finished");
+        }
+        Err(e) => {
+            log::error!("Error: {:?}", e);
+        }
+    }
     Ok(())
 }
