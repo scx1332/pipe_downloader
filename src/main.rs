@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use actix_web::dev::ServerHandle;
 use structopt::StructOpt;
+use tokio::{select, signal};
 
 #[derive(Clone)]
 pub struct ServerData {
@@ -52,6 +53,8 @@ impl StopHandle {
         let _ = self.inner.lock().unwrap().stop(graceful);
     }
 }
+
+
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
@@ -108,9 +111,12 @@ async fn main() -> anyhow::Result<()> {
     };
 
 
+    //let mut signals = Signals::new(&[SIGINT])?;
+
 
     let sp_thread = tokio::spawn(async move {
         let current_time = std::time::Instant::now();
+        let mut requested_kill = false;
         loop {
             {
                 let pd = server_data.pipe_downloader.lock().unwrap();
@@ -131,16 +137,29 @@ async fn main() -> anyhow::Result<()> {
             //     pd.pause_download();
             //     break;
             // }
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(1000)) => {
+                },
+                _ = signal::ctrl_c() => {
+                    println!("Kill signal received");
+                    let pd = server_data.pipe_downloader.lock().unwrap();
+                    pd.signal_stop();
+                    requested_kill = true;
 
-            //
-            thread::sleep(Duration::from_millis(1000));
+                },
+            };
+
         }
         let elapsed = current_time.elapsed();
         println!("Unpack finished in: {:?}", elapsed);
         if let Some(stop_handle) = stop_handle {
-            println!("Waiting after finish: {} sec", opt.wait_after_finish_sec);
-            std::thread::sleep(Duration::from_secs(opt.wait_after_finish_sec));
-            stop_handle.stop(true);
+            if !requested_kill {
+                println!("Waiting after finish: {} sec", opt.wait_after_finish_sec);
+                std::thread::sleep(Duration::from_secs(opt.wait_after_finish_sec));
+                stop_handle.stop(true);
+            } else {
+                stop_handle.stop(false);
+            }
         }
     });
 
