@@ -1,5 +1,5 @@
-use reqwest::header::CONTENT_LENGTH;
-use reqwest::StatusCode;
+use reqwest::header::{CONTENT_LENGTH, HeaderValue};
+use reqwest::{header, StatusCode};
 
 use std::io::Read;
 
@@ -104,7 +104,12 @@ fn request_chunk(
     );
 
     let header = format!("bytes={}-{}", range.start, range.end - 1);
-    let response = client.get(url).header("Range", header).send()?;
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+    let mut headers = header::HeaderMap::new();
+    headers.insert("User-Agent", HeaderValue::from_str(&format!("pipe_downloader/{VERSION}")).unwrap());
+
+    let response = client.get(url).headers(headers).header("Range", header).send()?;
 
     let status = response.status();
     let content_length = response
@@ -213,8 +218,11 @@ pub fn download_loop(
         download_url.to_string()
     };
     progress_context.lock().unwrap().download_url = Some(download_url.clone());
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+    let mut headers = header::HeaderMap::new();
+    headers.insert("User-Agent", HeaderValue::from_str(&format!("pipe_downloader/{VERSION}")).unwrap());
 
-    let response = client.head(&download_url).send()?;
+    let response = client.head(&download_url).headers(headers.clone()).send()?;
 
     let total_length = match response
         .headers()
@@ -275,7 +283,7 @@ pub fn download_loop(
         .chunk_downloaded
         .resize(thread_count, 0);
     let mut download_response = if !use_chunks {
-        Some(client.get(&download_url).send()?)
+        Some(client.get(&download_url).headers(headers).send()?)
     } else {
         None
     };

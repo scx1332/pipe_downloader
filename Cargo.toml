@@ -70,6 +70,7 @@ warp = { workspace = true }
 rand = { workspace = true }
 fake = { workspace = true, features = ['derive'] }
 pipe_utils = { path = "crates/pipe_utils" }
+reqwest = { workspace = true }
 
 [profile.release]
 lto = true

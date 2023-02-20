@@ -1278,6 +1278,7 @@ dependencies = [
  "pipe_downloader_lib",
  "pipe_utils",
  "rand",
+ "reqwest",
  "rust-embed",
  "serde",
  "serde_json",
