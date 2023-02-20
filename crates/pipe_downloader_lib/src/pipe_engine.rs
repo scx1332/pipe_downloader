@@ -1,4 +1,4 @@
-use reqwest::header::{CONTENT_LENGTH, HeaderValue};
+use reqwest::header::{HeaderValue, CONTENT_LENGTH};
 use reqwest::{header, StatusCode};
 
 use std::io::Read;
@@ -107,9 +107,16 @@ fn request_chunk(
     const VERSION: &str = env!("CARGO_PKG_VERSION");
 
     let mut headers = header::HeaderMap::new();
-    headers.insert("User-Agent", HeaderValue::from_str(&format!("pipe_downloader/{VERSION}")).unwrap());
+    headers.insert(
+        "User-Agent",
+        HeaderValue::from_str(&format!("pipe_downloader/{VERSION}")).unwrap(),
+    );
 
-    let response = client.get(url).headers(headers).header("Range", header).send()?;
+    let response = client
+        .get(url)
+        .headers(headers)
+        .header("Range", header)
+        .send()?;
 
     let status = response.status();
     let content_length = response
@@ -220,7 +227,10 @@ pub fn download_loop(
     progress_context.lock().unwrap().download_url = Some(download_url.clone());
     const VERSION: &str = env!("CARGO_PKG_VERSION");
     let mut headers = header::HeaderMap::new();
-    headers.insert("User-Agent", HeaderValue::from_str(&format!("pipe_downloader/{VERSION}")).unwrap());
+    headers.insert(
+        "User-Agent",
+        HeaderValue::from_str(&format!("pipe_downloader/{VERSION}")).unwrap(),
+    );
 
     let response = client.head(&download_url).headers(headers.clone()).send()?;
 
@@ -432,8 +442,8 @@ pub fn download_loop(
                             .rposition(|el| *el == chunk_no)
                             .unwrap_or_else(|| {
                                 panic!(
-                                    "Critical error, chunk {} should be in unfinished chunks",
-                                    chunk_no
+                                    "Critical error, chunk {chunk_no} should be in unfinished chunks"
+
                                 )
                             });
                         assert!(chunk_no == pc.unfinished_chunks[idx_to_remove]);

@@ -206,7 +206,7 @@ impl PipeDownloader {
                     pc.lock().unwrap().finish_time = Some(TimePair::now());
                 }
                 Err(err) => {
-                    pc.lock().unwrap().error_message = Some(format!("{:?}", err));
+                    pc.lock().unwrap().error_message = Some(format!("{err:?}"));
                     pc.lock().unwrap().stop_requested = true;
                     for t1 in threads {
                         t1.join().unwrap();
@@ -233,7 +233,7 @@ impl PipeDownloader {
             let seconds = eta % 60;
             let minutes = (eta / 60) % 60;
             let hours = (eta / 60) / 60;
-            format!("ETA: {:02}:{:02}:{:02}", hours, minutes, seconds)
+            format!("ETA: {hours:02}:{minutes:02}:{seconds:02}")
         } else {
             "ETA: unknown".to_string()
         };

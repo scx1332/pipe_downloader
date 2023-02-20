@@ -64,7 +64,7 @@ impl Read for MpscReaderFromReceiver {
                         let new_chunk = self.receiver.recv().map_err(|err| {
                             std::io::Error::new(
                                 ErrorKind::InvalidData,
-                                format!("Receive error {:?}", err),
+                                format!("Receive error {err:?}"),
                             )
                         })?;
                         if new_chunk.range.start == self.pos {

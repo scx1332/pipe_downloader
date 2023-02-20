@@ -39,7 +39,9 @@ impl ProgressHistory {
     pub fn get_speed(&self) -> usize {
         //log::warn!("First enty from {}", self.progress_entries.get(0).map(|entry| std::time::Instant::now() - entry.time).unwrap_or());
         let current_time = time::Instant::now();
-        let mut last_time = current_time - self.keep_time;
+        let mut last_time = current_time
+            .checked_sub(self.keep_time)
+            .unwrap_or(current_time);
         let mut total: usize = 0;
         //let now = std::time::Instant::now();
         for entry in self.progress_entries.iter().rev() {

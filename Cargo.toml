@@ -5,7 +5,7 @@ members = [
 
 [workspace.package]
 authors = ["Sieciech Czajka <sieciech.czajka@golem.network>"]
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 license = "MIT"
 
@@ -47,7 +47,7 @@ actix-cors = "0.6.4"
 actix-web = "4.1.0"
 
 [dependencies]
-pipe_downloader_lib = { path = "crates/pipe_downloader_lib", version = "0.5.0" }
+pipe_downloader_lib = { path = "crates/pipe_downloader_lib", version = "0.5.1" }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
 structopt = { workspace = true }

@@ -11,12 +11,12 @@ use pipe_downloader_lib::{PipeDownloader, PipeDownloaderOptions};
 use crate::frontend::frontend_serve;
 use crate::frontend::redirect_to_frontend;
 use serde_json::json;
-use std::thread;
+
 use std::time::Duration;
 
 use actix_web::dev::ServerHandle;
 use structopt::StructOpt;
-use tokio::{select, signal};
+use tokio::signal;
 
 #[derive(Clone)]
 pub struct ServerData {
@@ -35,7 +35,6 @@ async fn progress_endpoint(
     web::Json(json!({ "progress": pd.get_progress() }))
 }
 
-
 struct StopHandle {
     inner: std::sync::Mutex<ServerHandle>,
 }
@@ -53,8 +52,6 @@ impl StopHandle {
         let _ = self.inner.lock().unwrap().stop(graceful);
     }
 }
-
-
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
@@ -78,41 +75,38 @@ async fn main() -> anyhow::Result<()> {
     let (srv, stop_handle) = if opt.cli_only {
         (None, None)
     } else {
-        let srv =
-            HttpServer::new(move || {
-                let cors = if opt.add_cors {
-                    actix_cors::Cors::default()
-                        .allow_any_origin()
-                        .allow_any_method()
-                        .allow_any_header()
-                        .max_age(3600)
-                } else {
-                    actix_cors::Cors::default()
-                };
+        let srv = HttpServer::new(move || {
+            let cors = if opt.add_cors {
+                actix_cors::Cors::default()
+                    .allow_any_origin()
+                    .allow_any_method()
+                    .allow_any_header()
+                    .max_age(3600)
+            } else {
+                actix_cors::Cors::default()
+            };
 
-                let api_scope = web::scope("/api")
-                    .wrap(cors)
-                    .app_data(server_data_cloned.clone())
-                    .route("/progress", web::get().to(progress_endpoint))
-                    .route("/config", web::get().to(config));
+            let api_scope = web::scope("/api")
+                .wrap(cors)
+                .app_data(server_data_cloned.clone())
+                .route("/progress", web::get().to(progress_endpoint))
+                .route("/config", web::get().to(config));
 
-                return App::new()
-                    .route("/", web::get().to(redirect_to_frontend))
-                    .route("/frontend", web::get().to(redirect_to_frontend))
-                    .route("/frontend/{_:.*}", web::get().to(frontend_serve))
-                    .service(api_scope);
-            })
-                .workers(1)
-                .bind((opt.listen_addr.clone(), opt.listen_port.clone()))
-                .map_err(anyhow::Error::from)?
-                .run();
+            App::new()
+                .route("/", web::get().to(redirect_to_frontend))
+                .route("/frontend", web::get().to(redirect_to_frontend))
+                .route("/frontend/{_:.*}", web::get().to(frontend_serve))
+                .service(api_scope)
+        })
+        .workers(1)
+        .bind((opt.listen_addr.clone(), opt.listen_port))
+        .map_err(anyhow::Error::from)?
+        .run();
         let st_handle = StopHandle::new(srv.handle());
         (Some(srv), Some(st_handle))
     };
 
-
     //let mut signals = Signals::new(&[SIGINT])?;
-
 
     let sp_thread = tokio::spawn(async move {
         let current_time = std::time::Instant::now();
@@ -148,10 +142,9 @@ async fn main() -> anyhow::Result<()> {
 
                 },
             };
-
         }
         let elapsed = current_time.elapsed();
-        println!("Unpack finished in: {:?}", elapsed);
+        println!("Unpack finished in: {elapsed:?}");
         if let Some(stop_handle) = stop_handle {
             if !requested_kill {
                 println!("Waiting after finish: {} sec", opt.wait_after_finish_sec);
@@ -164,7 +157,10 @@ async fn main() -> anyhow::Result<()> {
     });
 
     if let Some(srv) = srv {
-        println!("Frontend started at http://{}:{}", opt.listen_addr, opt.listen_port);
+        println!(
+            "Frontend started at http://{}:{}",
+            opt.listen_addr, opt.listen_port
+        );
         //Await actix_web server if it was started
         srv.await.map_err(anyhow::Error::from)?;
     }
