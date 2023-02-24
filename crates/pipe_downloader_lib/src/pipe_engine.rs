@@ -315,7 +315,7 @@ pub fn init_download_loop(
         log::debug!("Unfinished chunks: {:?}", pc.unfinished_chunks);
     }
 
-    Ok(DownloadLoopInitResult{
+    Ok(DownloadLoopInitResult {
         chunk_count,
         chunk_size,
         total_length,

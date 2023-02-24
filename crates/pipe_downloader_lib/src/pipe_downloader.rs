@@ -77,12 +77,7 @@ impl PipeDownloader {
             let download_url = url.clone();
             let options = self.options.clone();
             let t = thread::spawn(move || {
-                init_download_loop(
-                    download_thread_count,
-                    options,
-                    pc.clone(),
-                    &download_url,
-                )
+                init_download_loop(download_thread_count, options, pc.clone(), &download_url)
             });
 
             match t.join().unwrap() {
@@ -98,11 +93,7 @@ impl PipeDownloader {
             }
         };
 
-
         let mut threads = Vec::new();
-
-
-
 
         for thread_no in 0..download_loop_init_result.threads_to_spawn {
             let pc = self.progress_context.clone();
