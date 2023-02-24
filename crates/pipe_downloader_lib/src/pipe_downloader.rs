@@ -19,8 +19,8 @@ use bzip2::read::BzDecoder;
 #[cfg(feature = "lz4-rust")]
 use lz4_flex::frame::FrameDecoder;
 
-use crate::pipe_engine::decode_loop;
 use crate::pipe_engine::download_loop;
+use crate::pipe_engine::{decode_loop, init_download_loop};
 use crate::pipe_progress::InternalProgress;
 use crate::pipe_utils::bytes_to_human;
 use crate::pipe_utils::resolve_url;
@@ -72,20 +72,50 @@ impl PipeDownloader {
         let (send_download_chunks, receive_download_chunks) = sync_channel(1);
 
         let download_thread_count = self.options.download_threads;
-        let mut threads = Vec::new();
-        for thread_no in 0..download_thread_count {
+        let download_loop_init_result = {
             let pc = self.progress_context.clone();
             let download_url = url.clone();
             let options = self.options.clone();
-            let send = send_download_chunks.clone();
-            threads.push(thread::spawn(move || {
-                match download_loop(
-                    thread_no,
+            let t = thread::spawn(move || {
+                init_download_loop(
                     download_thread_count,
                     options,
                     pc.clone(),
-                    send,
                     &download_url,
+                )
+            });
+
+            match t.join().unwrap() {
+                Ok(download_loop_init_result) => {
+                    log::info!("Download loop initialized");
+                    download_loop_init_result
+                }
+                Err(err) => {
+                    log::error!("Error when initializing download: {:?}", err);
+                    //stop other threads as well
+                    return Err(err);
+                }
+            }
+        };
+
+
+        let mut threads = Vec::new();
+
+
+
+
+        for thread_no in 0..download_loop_init_result.threads_to_spawn {
+            let pc = self.progress_context.clone();
+            let options = self.options.clone();
+            let send = send_download_chunks.clone();
+            let download_loop_init_result = download_loop_init_result.clone();
+            threads.push(thread::spawn(move || {
+                match download_loop(
+                    thread_no,
+                    options,
+                    pc.clone(),
+                    send,
+                    download_loop_init_result,
                 ) {
                     Ok(_) => {
                         log::info!("Download loop finished, finishing thread");
@@ -100,7 +130,12 @@ impl PipeDownloader {
             }));
         }
 
-        let mut p = MpscReaderFromReceiver::new(receive_download_chunks, true);
+        let mut p = MpscReaderFromReceiver::new(
+            receive_download_chunks,
+            false,
+            self.progress_context.clone(),
+            true,
+        );
 
         let (send_unpack_chunks, receive_unpack_chunks) = sync_channel::<DataChunk>(1);
 
@@ -146,7 +181,12 @@ impl PipeDownloader {
             log::info!("Decode loop finished, finishing thread");
         });
 
-        let mut p2 = MpscReaderFromReceiver::new(receive_unpack_chunks, false);
+        let mut p2 = MpscReaderFromReceiver::new(
+            receive_unpack_chunks,
+            false,
+            self.progress_context.clone(),
+            false,
+        );
 
         let target_path = self.target_path.clone();
         let download_url = url;
@@ -196,7 +236,7 @@ impl PipeDownloader {
                     pc.lock().unwrap().finish_time = Some(TimePair::now());
                 }
                 Err(err) => {
-                    pc.lock().unwrap().error_message = Some(format!("{:?}", err));
+                    pc.lock().unwrap().error_message = Some(format!("{err:?}"));
                     pc.lock().unwrap().stop_requested = true;
                     for t1 in threads {
                         t1.join().unwrap();
@@ -223,7 +263,7 @@ impl PipeDownloader {
             let seconds = eta % 60;
             let minutes = (eta / 60) % 60;
             let hours = (eta / 60) / 60;
-            format!("ETA: {:02}:{:02}:{:02}", hours, minutes, seconds)
+            format!("ETA: {hours:02}:{minutes:02}:{seconds:02}")
         } else {
             "ETA: unknown".to_string()
         };

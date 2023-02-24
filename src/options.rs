@@ -39,11 +39,26 @@ pub struct CliOptions {
     #[structopt(long = "json")]
     pub json: bool,
 
-    /// For debugging purposes
-    #[structopt(long = "run-after-finish")]
-    pub run_after_finish: bool,
+    /// For server
+    #[structopt(long = "wait-after-finish-sec", default_value = "10")]
+    pub wait_after_finish_sec: u64,
 
     /// Force only one connection (like when no partial content header is supported by header)
     #[structopt(long = "force-no-partial-content")]
     pub force_no_partial_content: bool,
+
+    /// No web UI/backend
+    #[structopt(long = "cli-only")]
+    pub cli_only: bool,
+
+    /// Listen address
+    #[structopt(long, default_value = "127.0.0.1")]
+    pub listen_addr: String,
+
+    /// Listen port
+    #[structopt(long, default_value = "15100")]
+    pub listen_port: u16,
+
+    #[structopt(long = "add-cors")]
+    pub add_cors: bool,
 }

@@ -1,5 +1,5 @@
-use reqwest::header::CONTENT_LENGTH;
-use reqwest::StatusCode;
+use reqwest::header::{HeaderValue, CONTENT_LENGTH};
+use reqwest::{header, StatusCode};
 
 use std::io::Read;
 
@@ -14,11 +14,12 @@ use anyhow::anyhow;
 use reqwest::blocking::Response;
 use std::time::Duration;
 
-use crate::pipe_progress::InternalProgress;
+use crate::pipe_progress::{DownloadChunkProgress, InternalProgress};
 use crate::pipe_utils::bytes_to_human;
 use crate::pipe_wrapper::DataChunk;
 
 fn download_chunk(
+    chunk_no: usize,
     thread_no: usize,
     progress_context: Arc<Mutex<InternalProgress>>,
     range: &std::ops::Range<usize>,
@@ -45,6 +46,10 @@ fn download_chunk(
         buf_vec.extend_from_slice(&buf[..n]);
         {
             let mut progress_context = progress_context.lock().unwrap();
+
+            if let Some(cc) = progress_context.current_chunks.get_mut(&chunk_no) {
+                cc.downloaded += n;
+            }
             if let Some(cd) = progress_context.chunk_downloaded.get_mut(thread_no) {
                 *cd += n;
             }
@@ -99,7 +104,19 @@ fn request_chunk(
     );
 
     let header = format!("bytes={}-{}", range.start, range.end - 1);
-    let response = client.get(url).header("Range", header).send()?;
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+    let mut headers = header::HeaderMap::new();
+    headers.insert(
+        "User-Agent",
+        HeaderValue::from_str(&format!("pipe_downloader/{VERSION}")).unwrap(),
+    );
+
+    let response = client
+        .get(url)
+        .headers(headers)
+        .header("Range", header)
+        .send()?;
 
     let status = response.status();
     let content_length = response
@@ -170,6 +187,7 @@ pub fn decode_loop<T: Read>(
         );
         buf.resize(bytes_read, 0);
         let data_chunk = DataChunk {
+            chunk_no: 0,
             data: buf,
             range: unpacked_size - bytes_read..unpacked_size,
         };
@@ -179,14 +197,22 @@ pub fn decode_loop<T: Read>(
     Ok(())
 }
 
-pub fn download_loop(
-    thread_no: usize,
+#[derive(Debug, Clone)]
+pub struct DownloadLoopInitResult {
+    pub chunk_count: usize,
+    pub chunk_size: usize,
+    pub total_length: usize,
+    pub use_chunks: bool,
+    pub download_url: String,
+    pub threads_to_spawn: usize,
+}
+
+pub fn init_download_loop(
     thread_count: usize,
     options: PipeDownloaderOptions,
     progress_context: Arc<Mutex<InternalProgress>>,
-    send_download_chunks: SyncSender<DataChunk>,
     download_url: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<DownloadLoopInitResult> {
     let mut use_chunks = !options.force_no_chunks;
     let client = reqwest::blocking::Client::new();
 
@@ -207,8 +233,14 @@ pub fn download_loop(
         download_url.to_string()
     };
     progress_context.lock().unwrap().download_url = Some(download_url.clone());
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+    let mut headers = header::HeaderMap::new();
+    headers.insert(
+        "User-Agent",
+        HeaderValue::from_str(&format!("pipe_downloader/{VERSION}")).unwrap(),
+    );
 
-    let response = client.head(&download_url).send()?;
+    let response = client.head(&download_url).headers(headers.clone()).send()?;
 
     let total_length = match response
         .headers()
@@ -254,54 +286,81 @@ pub fn download_loop(
             use_chunks = false;
         }
     }
-    let thread_count = if use_chunks {
-        thread_count
-    } else if thread_no != 0 {
-        log::warn!("Thread number is set, but server does not support partial content, falling back to single request");
-        return Ok(());
-    } else {
-        1
-    };
+    let thread_count = if use_chunks { thread_count } else { 1 };
 
     progress_context
         .lock()
         .unwrap()
         .chunk_downloaded
         .resize(thread_count, 0);
-    let mut download_response = if !use_chunks {
-        Some(client.get(&download_url).send()?)
-    } else {
-        None
-    };
 
     let chunk_size = options.chunk_size_downloader;
 
     let chunk_count = match total_length {
-        Some(total_length) => ((total_length - 1) / chunk_size + 1) as usize,
+        Some(total_length) => (total_length - 1) / chunk_size + 1,
         None => 1,
     };
     let total_length = total_length.ok_or_else(|| anyhow!("Content length unknown"))?;
 
     {
-        //first thread to fill this value (blocking other threads)
         let mut pc = progress_context.lock().unwrap();
-        if pc.unfinished_chunks.is_empty() {
-            pc.total_chunks = chunk_count;
-            pc.unfinished_chunks.reserve(chunk_count);
-            for i in (0..chunk_count).rev() {
-                pc.unfinished_chunks.push(i);
-            }
-            log::warn!("Unfinished chunks: {:?}", pc.unfinished_chunks);
+        pc.server_chunk_support = use_chunks;
+        pc.download_threads = thread_count;
+        pc.chunk_size = chunk_size;
+        pc.total_chunks = chunk_count;
+        pc.unfinished_chunks.reserve(chunk_count);
+        for i in (0..chunk_count).rev() {
+            pc.unfinished_chunks.push(i);
         }
+        log::debug!("Unfinished chunks: {:?}", pc.unfinished_chunks);
     }
 
-    for i in 0..chunk_count {
-        let max_length = std::cmp::min(chunk_size, total_length - i * chunk_size);
+    Ok(DownloadLoopInitResult{
+        chunk_count,
+        chunk_size,
+        total_length,
+        use_chunks,
+        download_url,
+        threads_to_spawn: thread_count,
+    })
+}
+
+pub fn download_loop(
+    thread_no: usize,
+    options: PipeDownloaderOptions,
+    progress_context: Arc<Mutex<InternalProgress>>,
+    send_download_chunks: SyncSender<DataChunk>,
+    download_loop_init_result: DownloadLoopInitResult,
+) -> anyhow::Result<()> {
+    let chunk_count = download_loop_init_result.chunk_count;
+    let chunk_size = download_loop_init_result.chunk_size;
+    let total_length = download_loop_init_result.total_length;
+    let use_chunks = download_loop_init_result.use_chunks;
+    let download_url = download_loop_init_result.download_url.as_str();
+    let thread_count = download_loop_init_result.threads_to_spawn;
+
+    let client = reqwest::blocking::Client::new();
+
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+    let mut headers = header::HeaderMap::new();
+    headers.insert(
+        "User-Agent",
+        HeaderValue::from_str(&format!("pipe_downloader/{VERSION}")).unwrap(),
+    );
+
+    let mut download_response = if !use_chunks {
+        Some(client.get(download_url).headers(headers).send()?)
+    } else {
+        None
+    };
+
+    for chunk_no in 0..chunk_count {
+        let max_length = std::cmp::min(chunk_size, total_length - chunk_no * chunk_size);
         if max_length == 0 {
             break;
         }
         //one thread for one range
-        if i % thread_count != thread_no {
+        if chunk_no % thread_count != thread_no {
             continue;
         }
         loop {
@@ -311,7 +370,7 @@ pub fn download_loop(
                 .unfinished_chunks
                 .last()
                 .expect("Critical error unfinished chunks have to be here");
-            if i - smallest_unfinished > thread_count {
+            if chunk_no - smallest_unfinished > thread_count {
                 //log::warn!("Waiting for chunk {}", i);
                 std::thread::sleep(std::time::Duration::from_millis(100));
                 continue;
@@ -319,13 +378,26 @@ pub fn download_loop(
             break;
         }
         let range = std::ops::Range {
-            start: i * chunk_size,
-            end: i * chunk_size + max_length,
+            start: chunk_no * chunk_size,
+            end: chunk_no * chunk_size + max_length,
         };
-        let client = reqwest::blocking::Client::new();
+
+        {
+            let mut progress = progress_context.lock().unwrap();
+            progress.current_chunks.insert(
+                chunk_no,
+                DownloadChunkProgress {
+                    downloaded: 0,
+                    to_download: max_length,
+                    unpacked: 0,
+                    to_unpack: max_length,
+                },
+            );
+        }
 
         loop {
             let progress = { progress_context.lock().unwrap().clone() };
+
             if progress.stop_requested {
                 return Err(anyhow::anyhow!("Stop requested"));
             }
@@ -341,6 +413,7 @@ pub fn download_loop(
 
             let result = if let Some(download_response) = &mut download_response {
                 download_chunk(
+                    chunk_no,
                     thread_no,
                     progress_context.clone(),
                     &range,
@@ -359,9 +432,10 @@ pub fn download_loop(
                     range.clone()
                 };
 
-                match request_chunk(&download_url, &client, &new_range) {
+                match request_chunk(download_url, &client, &new_range) {
                     Ok(mut new_response) => {
                         let res = download_chunk(
+                            chunk_no,
                             thread_no,
                             progress_context.clone(),
                             &range,
@@ -388,6 +462,7 @@ pub fn download_loop(
                         }
                     }
                     let dc = DataChunk {
+                        chunk_no,
                         range: range.clone(),
                         data: buf,
                     };
@@ -398,13 +473,19 @@ pub fn download_loop(
                         let idx_to_remove = pc
                             .unfinished_chunks
                             .iter()
-                            .rposition(|el| *el == i)
+                            .rposition(|el| *el == chunk_no)
                             .unwrap_or_else(|| {
-                                panic!("Critical error, chunk {} should be in unfinished chunks", i)
+                                panic!(
+                                    "Critical error, chunk {chunk_no} should be in unfinished chunks"
+
+                                )
                             });
-                        assert!(i == pc.unfinished_chunks[idx_to_remove]);
-                        log::warn!("Removing chunk {} at idx {}", i, idx_to_remove);
+                        assert_eq!(chunk_no, pc.unfinished_chunks[idx_to_remove]);
+                        log::info!("Removing chunk {} at idx {}", chunk_no, idx_to_remove);
                         pc.unfinished_chunks.remove(idx_to_remove);
+
+                        // remove from current chunks - it's easier, because there is only few of them
+                        //pc.current_chunks.remove(&chunk_no);
                     }
                     if let Err(err) = send_download_chunks.send(dc) {
                         log::error!("Error while sending chunk: {:?}", err);

@@ -1,15 +1,18 @@
 use crate::tsutils::TimePair;
+use chrono::Utc;
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use std::collections::BTreeMap;
 use std::time;
 use std::time::Instant;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ProgressHistoryEntry {
+    #[serde(skip_serializing)]
     time: time::Instant,
     bytes: usize,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ProgressHistory {
     progress_entries: Vec<ProgressHistoryEntry>,
     max_entries: usize,
@@ -36,7 +39,9 @@ impl ProgressHistory {
     pub fn get_speed(&self) -> usize {
         //log::warn!("First enty from {}", self.progress_entries.get(0).map(|entry| std::time::Instant::now() - entry.time).unwrap_or());
         let current_time = time::Instant::now();
-        let mut last_time = current_time - self.keep_time;
+        let mut last_time = current_time
+            .checked_sub(self.keep_time)
+            .unwrap_or(current_time);
         let mut total: usize = 0;
         //let now = std::time::Instant::now();
         for entry in self.progress_entries.iter().rev() {
@@ -84,11 +89,22 @@ impl ProgressHistory {
         }
     }
 }
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "camelCase"))]
+#[derive(Debug, Clone)]
+pub struct DownloadChunkProgress {
+    pub downloaded: usize,
+    pub to_download: usize,
+    pub unpacked: usize,
+    pub to_unpack: usize,
+}
 
 #[derive(Debug, Clone)]
 pub struct InternalProgress {
     pub start_time: TimePair,
+    pub chunk_size: usize,
     pub unfinished_chunks: Vec<usize>,
+    pub current_chunks: BTreeMap<usize, DownloadChunkProgress>,
+    //pub unpack_chunks: BTreeMap<usize, UnpackChunkProgress>,
     pub total_chunks: usize,
     pub total_downloaded: usize,
     pub total_download_size: Option<usize>,
@@ -105,13 +121,18 @@ pub struct InternalProgress {
     pub error_message_unpack: Option<String>,
     pub error_message: Option<String>,
     pub download_url: Option<String>,
+    pub download_threads: usize,
+    pub server_chunk_support: bool,
 }
 
 impl Default for InternalProgress {
     fn default() -> InternalProgress {
         InternalProgress {
             start_time: TimePair::now(),
+            chunk_size: 0,
             unfinished_chunks: vec![],
+            current_chunks: BTreeMap::new(),
+            //unpack_chunks: BTreeMap::new(),
             total_chunks: 0,
             total_download_size: None,
             total_downloaded: 0,
@@ -128,18 +149,20 @@ impl Default for InternalProgress {
             error_message_download: None,
             error_message_unpack: None,
             download_url: None,
+            download_threads: 0,
+            server_chunk_support: false,
         }
     }
 }
 
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
-)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "camelCase"))]
 #[derive(Debug, Clone, Default)]
 pub struct PipeDownloaderProgress {
-    pub start_time: chrono::DateTime<chrono::Utc>,
+    pub start_time: chrono::DateTime<Utc>,
+    pub current_time: chrono::DateTime<chrono::Utc>,
+    pub download_threads: usize,
+    pub server_chunk_support: bool,
+    pub chunk_size: usize,
     pub downloaded: usize,
     pub unpacked: usize,
     pub stop_requested: bool,
@@ -158,12 +181,19 @@ pub struct PipeDownloaderProgress {
     pub chunks_downloading: usize,
     pub chunks_total: usize,
     pub chunks_left: usize,
+    pub current_chunks: BTreeMap<usize, DownloadChunkProgress>,
+    //pub unpack_chunks: BTreeMap<usize, UnpackChunkProgress>,
+    //pub progress_buckets_download: ProgressHistory,
+    //pub progress_buckets_unpack: ProgressHistory,
 }
 
 impl InternalProgress {
     pub fn progress(&self) -> PipeDownloaderProgress {
         PipeDownloaderProgress {
             start_time: self.start_time.to_utc().unwrap(),
+            current_time: TimePair::now().to_utc().unwrap(),
+            download_threads: self.download_threads,
+            chunk_size: self.chunk_size,
             downloaded: self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>(),
             unpacked: self.total_unpacked,
             stop_requested: self.stop_requested,
@@ -182,6 +212,11 @@ impl InternalProgress {
             chunks_downloading: self.chunk_downloaded.len(),
             chunks_total: self.total_chunks,
             chunks_left: self.unfinished_chunks.len(),
+            //progress_buckets_download: self.progress_buckets_download.clone(),
+            //progress_buckets_unpack: self.progress_buckets_unpack.clone(),
+            current_chunks: self.current_chunks.clone(),
+            server_chunk_support: self.server_chunk_support,
+            //unpack_chunks: self.unpack_chunks.clone(),
         }
     }
 

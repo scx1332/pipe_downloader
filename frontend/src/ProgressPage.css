@@ -1,0 +1,94 @@
+.progress-page {
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: row;
+}
+.progress-chunk {
+    transform-origin: top;
+    transition: height 0.5s ease;
+    overflow: hidden;
+    width: 100%;
+}
+
+.progress-chunk-hidden {
+    height: 0rem;
+}
+.progress-chunk-visible {
+    height: 3.5rem;
+}
+.progress-chunk-inner {
+    padding: 1rem;
+}
+.progress-chunk-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+.progress-page-left {
+    max-width: 30rem;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+}
+.progress-page-right {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    min-width: 20rem;
+    flex-grow: 1;
+}
+
+.progress-page-dates {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+div.download-url {
+    margin: 1rem 0 0.5rem 0;
+}
+div.download-url div.header {
+    font-weight: bold;
+    font-size: 0.8rem;
+}
+div.download-url input {
+    width: 100%;
+    padding: 0rem;
+    border: 0px;
+    border-radius: 0.2rem;
+    font-size: 0.8rem;
+}
+table td {
+    font-weight: bold;
+    padding: 0.1rem 0.4rem;
+    font-size: 1.1rem;
+}
+table th {
+    font-weight: normal;
+    text-align: right;
+    padding: 0.1rem 0.1rem;
+    font-size: 0.9rem;
+}
+
+.progress-page-right-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-left: 1rem
+}
+.progress-page-right-header div {
+    margin-right: 1rem;
+}
+.progress-chunk-not-possible {
+    margin-bottom: 1rem;
+    display: flex;
+    padding: 1rem;
+}
+.progress-chunk-not-possible-label {
+    margin-left: 0.4rem;
+    margin-top: -0.2rem;
+    font-size: 1.0rem;
+    font-weight: bold;
+}
