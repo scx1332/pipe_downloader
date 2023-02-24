@@ -19,8 +19,8 @@ use bzip2::read::BzDecoder;
 #[cfg(feature = "lz4-rust")]
 use lz4_flex::frame::FrameDecoder;
 
-use crate::pipe_engine::decode_loop;
 use crate::pipe_engine::download_loop;
+use crate::pipe_engine::{decode_loop, init_download_loop};
 use crate::pipe_progress::InternalProgress;
 use crate::pipe_utils::bytes_to_human;
 use crate::pipe_utils::resolve_url;
@@ -72,12 +72,46 @@ impl PipeDownloader {
         let (send_download_chunks, receive_download_chunks) = sync_channel(1);
 
         let download_thread_count = self.options.download_threads;
+        let download_loop_init_result = {
+            let pc = self.progress_context.clone();
+            let download_url = url.clone();
+            let options = self.options.clone();
+            let send = send_download_chunks.clone();
+            let t = thread::spawn(move || {
+                init_download_loop(
+                    download_thread_count,
+                    options,
+                    pc.clone(),
+                    send,
+                    &download_url,
+                )
+            });
+
+            match t.join().unwrap() {
+                Ok(download_loop_init_result) => {
+                    log::info!("Download loop initialized");
+                    download_loop_init_result
+                }
+                Err(err) => {
+                    log::error!("Error when initializing download: {:?}", err);
+                    //stop other threads as well
+                    return Err(err);
+                }
+            }
+        };
+
+
         let mut threads = Vec::new();
+
+
+
+
         for thread_no in 0..download_thread_count {
             let pc = self.progress_context.clone();
             let download_url = url.clone();
             let options = self.options.clone();
             let send = send_download_chunks.clone();
+            let download_loop_init_result = download_loop_init_result.clone();
             threads.push(thread::spawn(move || {
                 match download_loop(
                     thread_no,
@@ -85,7 +119,7 @@ impl PipeDownloader {
                     options,
                     pc.clone(),
                     send,
-                    &download_url,
+                    download_loop_init_result,
                 ) {
                     Ok(_) => {
                         log::info!("Download loop finished, finishing thread");
