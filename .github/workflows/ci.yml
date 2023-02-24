@@ -19,6 +19,7 @@ jobs:
             build-on: windows-latest
             use-cross: false
             install-musl: false
+            install-openssl: false
             exe: ".exe"
             run-tests: true
           - cpu: x86_64
@@ -27,6 +28,7 @@ jobs:
             build-on: ubuntu-latest
             use-cross: false
             install-musl: true
+            install-openssl: true
             exe: ""
             run-tests: true
           - cpu: aarch64
@@ -34,6 +36,7 @@ jobs:
             target: aarch64-unknown-linux-musl
             build-on: ubuntu-latest
             use-cross: true
+            install-openssl: true
             install-musl: false
             exe: ""
             run-tests: false
@@ -42,6 +45,7 @@ jobs:
             target: aarch64-apple-darwin
             build-on: macos-latest
             use-cross: true
+            install-openssl: false
             install-musl: false
             exe: ""
             run-tests: false
@@ -50,6 +54,7 @@ jobs:
             target: x86_64-apple-darwin
             build-on: macos-latest
             use-cross: false
+            install-openssl: false
             install-musl: false
             exe: ""
             run-tests: true
@@ -65,6 +70,13 @@ jobs:
           set -ex
           sudo apt-get update
           sudo apt-get install -y musl-tools
+
+      - name: Install openssl if needed
+        if: ${{ matrix.install-openssl }}
+        run: |
+          set -ex
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev
 
       - name: Install Rust stable toolchain ${{ matrix.target }}
         uses: actions-rs/toolchain@v1
