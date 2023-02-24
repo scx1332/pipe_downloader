@@ -10,8 +10,7 @@ license.workspace = true
 name = "pipe_downloader_lib"
 
 [features]
-default = ["serde", "with-lz4", "https"]
-https = ["reqwest/rustls-tls"]
+default = ["serde", "with-lz4"]
 with-lz4 = ["lz4"]
 lz4-rust = ["lz4_flex"]
 serde = ["dep:serde"]
@@ -29,3 +28,6 @@ serde = { workspace = true, features = ["derive"], optional = true }
 lz4_flex = { workspace = true, optional = true }
 chrono = { workspace = true, default-features = false, features = ["std", "serde"] }
 xz2 = { workspace = true }
+tokio = { workspace = true }
+[target.'cfg(unix)'.dependencies]
+openssl-sys = { workspace = true }

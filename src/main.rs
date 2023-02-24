@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
         force_no_chunks: opt.force_no_partial_content,
         download_threads: opt.download_threads,
     }
-    .start_download(&opt.url, &opt.output_dir)?;
+    .start_download(&opt.url, &opt.output_dir).await?;
 
     let server_data = Data::new(Box::new(ServerData {
         pipe_downloader: Arc::new(Mutex::new(pd)),

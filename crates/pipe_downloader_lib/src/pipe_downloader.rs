@@ -56,7 +56,7 @@ impl PipeDownloader {
     }
 
     /// Process inputs and try to start download
-    pub(crate) fn start_download(self: &mut PipeDownloader) -> anyhow::Result<()> {
+    pub(crate) async fn start_download(self: &mut PipeDownloader) -> anyhow::Result<()> {
         if self.download_started {
             return Err(anyhow::anyhow!("Download already started"));
         }
@@ -77,32 +77,29 @@ impl PipeDownloader {
             let download_url = url.clone();
             let options = self.options.clone();
             let t = thread::spawn(move || {
-                init_download_loop(
-                    download_thread_count,
-                    options,
-                    pc.clone(),
-                    &download_url,
-                )
+                init_download_loop(download_thread_count, options, pc.clone(), &download_url)
             });
-
-            match t.join().unwrap() {
-                Ok(download_loop_init_result) => {
-                    log::info!("Download loop initialized");
-                    download_loop_init_result
-                }
-                Err(err) => {
-                    log::error!("Error when initializing download: {:?}", err);
-                    //stop other threads as well
-                    return Err(err);
+            
+            loop {
+                if t.is_finished() {
+                    match t.join().unwrap() {
+                        Ok(download_loop_init_result) => {
+                            log::info!("Download loop initialized");
+                            break download_loop_init_result
+                        }
+                        Err(err) => {
+                            log::error!("Error when initializing download: {:?}", err);
+                            //stop other threads as well
+                            return Err(err);
+                        }
+                    }
+                } else {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 }
             }
         };
 
-
         let mut threads = Vec::new();
-
-
-
 
         for thread_no in 0..download_loop_init_result.threads_to_spawn {
             let pc = self.progress_context.clone();
