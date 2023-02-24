@@ -199,18 +199,18 @@ pub fn decode_loop<T: Read>(
 
 #[derive(Debug, Clone)]
 pub struct DownloadLoopInitResult {
-    chunk_count: usize,
-    chunk_size: usize,
-    total_length: usize,
-    use_chunks: bool,
-    download_url: String,
+    pub chunk_count: usize,
+    pub chunk_size: usize,
+    pub total_length: usize,
+    pub use_chunks: bool,
+    pub download_url: String,
+    pub threads_to_spawn: usize,
 }
 
 pub fn init_download_loop(
     thread_count: usize,
     options: PipeDownloaderOptions,
     progress_context: Arc<Mutex<InternalProgress>>,
-    send_download_chunks: SyncSender<DataChunk>,
     download_url: &str,
 ) -> anyhow::Result<DownloadLoopInitResult> {
     let mut use_chunks = !options.force_no_chunks;
@@ -293,11 +293,6 @@ pub fn init_download_loop(
         .unwrap()
         .chunk_downloaded
         .resize(thread_count, 0);
-    let mut download_response = if !use_chunks {
-        Some(client.get(&download_url).headers(headers).send()?)
-    } else {
-        None
-    };
 
     let chunk_size = options.chunk_size_downloader;
 
@@ -325,12 +320,12 @@ pub fn init_download_loop(
         total_length,
         use_chunks,
         download_url,
+        threads_to_spawn: thread_count,
     })
 }
 
 pub fn download_loop(
     thread_no: usize,
-    thread_count: usize,
     options: PipeDownloaderOptions,
     progress_context: Arc<Mutex<InternalProgress>>,
     send_download_chunks: SyncSender<DataChunk>,
@@ -341,6 +336,7 @@ pub fn download_loop(
     let total_length = download_loop_init_result.total_length;
     let use_chunks = download_loop_init_result.use_chunks;
     let download_url = download_loop_init_result.download_url.as_str();
+    let thread_count = download_loop_init_result.threads_to_spawn;
 
     let client = reqwest::blocking::Client::new();
 
@@ -435,7 +431,7 @@ pub fn download_loop(
                     range.clone()
                 };
 
-                match request_chunk(&download_url, &client, &new_range) {
+                match request_chunk(download_url, &client, &new_range) {
                     Ok(mut new_response) => {
                         let res = download_chunk(
                             chunk_no,
@@ -483,8 +479,8 @@ pub fn download_loop(
 
                                 )
                             });
-                        assert!(chunk_no == pc.unfinished_chunks[idx_to_remove]);
-                        log::warn!("Removing chunk {} at idx {}", chunk_no, idx_to_remove);
+                        assert_eq!(chunk_no, pc.unfinished_chunks[idx_to_remove]);
+                        log::info!("Removing chunk {} at idx {}", chunk_no, idx_to_remove);
                         pc.unfinished_chunks.remove(idx_to_remove);
 
                         // remove from current chunks - it's easier, because there is only few of them

@@ -76,13 +76,11 @@ impl PipeDownloader {
             let pc = self.progress_context.clone();
             let download_url = url.clone();
             let options = self.options.clone();
-            let send = send_download_chunks.clone();
             let t = thread::spawn(move || {
                 init_download_loop(
                     download_thread_count,
                     options,
                     pc.clone(),
-                    send,
                     &download_url,
                 )
             });
@@ -106,16 +104,14 @@ impl PipeDownloader {
 
 
 
-        for thread_no in 0..download_thread_count {
+        for thread_no in 0..download_loop_init_result.threads_to_spawn {
             let pc = self.progress_context.clone();
-            let download_url = url.clone();
             let options = self.options.clone();
             let send = send_download_chunks.clone();
             let download_loop_init_result = download_loop_init_result.clone();
             threads.push(thread::spawn(move || {
                 match download_loop(
                     thread_no,
-                    download_thread_count,
                     options,
                     pc.clone(),
                     send,
