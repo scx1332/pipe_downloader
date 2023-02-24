@@ -45,6 +45,7 @@ rust-embed = "6.4.2"
 mime_guess = "2.0.4"
 actix-cors = "0.6.4"
 actix-web = "4.1.0"
+openssl-sys = { version="0.9.70", features = ["vendored"] }
 
 [dependencies]
 pipe_downloader_lib = { path = "crates/pipe_downloader_lib", version = "0.6.0" }
@@ -63,6 +64,9 @@ log = { workspace = true }
 tokio = { workspace = true }
 actix-cors = { workspace = true }
 actix-web = { workspace = true }
+reqwest = { workspace = true }
+[target.'cfg(unix)'.dependencies]
+openssl-sys = { workspace = true }
 
 [dev-dependencies]
 sha256 = { workspace = true }
@@ -70,7 +74,6 @@ warp = { workspace = true }
 rand = { workspace = true }
 fake = { workspace = true, features = ['derive'] }
 pipe_utils = { path = "crates/pipe_utils" }
-reqwest = { workspace = true }
 
 [profile.release]
 lto = true
