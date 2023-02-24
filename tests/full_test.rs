@@ -115,7 +115,7 @@ async fn test_download_and_unpack() {
             )
             .as_str(),
             &sd.join(format!("output_{}", compr)),
-        )
+        ).await
         .unwrap();
 
         let _current_time = std::time::Instant::now();

@@ -34,9 +34,9 @@ impl Default for PipeDownloaderOptions {
 
 impl PipeDownloaderOptions {
     /// Constructs downloader from given options.
-    pub fn start_download(self, url: &str, target_path: &Path) -> anyhow::Result<PipeDownloader> {
+    pub async fn start_download(self, url: &str, target_path: &Path) -> anyhow::Result<PipeDownloader> {
         let mut pd = PipeDownloader::new(url, target_path, self);
-        pd.start_download()?;
+        pd.start_download().await?;
         Ok(pd)
     }
 }

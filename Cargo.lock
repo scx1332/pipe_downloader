@@ -1367,7 +1367,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pipe_downloader"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "actix-cors",
  "actix-web",
@@ -1396,7 +1396,7 @@ dependencies = [
 
 [[package]]
 name = "pipe_downloader_lib"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "bzip2",
@@ -1410,12 +1410,13 @@ dependencies = [
  "reqwest",
  "serde",
  "tar",
+ "tokio",
  "xz2",
 ]
 
 [[package]]
 name = "pipe_serve"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "structopt",
  "tokio",
@@ -1424,7 +1425,7 @@ dependencies = [
 
 [[package]]
 name = "pipe_utils"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "bzip2",
