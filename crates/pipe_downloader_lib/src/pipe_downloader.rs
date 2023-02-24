@@ -132,7 +132,7 @@ impl PipeDownloader {
 
         let mut p = MpscReaderFromReceiver::new(
             receive_download_chunks,
-            true,
+            false,
             self.progress_context.clone(),
             true,
         );
