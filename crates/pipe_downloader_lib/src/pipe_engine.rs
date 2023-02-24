@@ -302,9 +302,10 @@ pub fn init_download_loop(
     };
     let total_length = total_length.ok_or_else(|| anyhow!("Content length unknown"))?;
 
-    //first thread to fill this value (blocking other threads)
-    let mut pc = progress_context.lock().unwrap();
-    if pc.unfinished_chunks.is_empty() {
+    {
+        let mut pc = progress_context.lock().unwrap();
+        pc.server_chunk_support = use_chunks;
+        pc.download_threads = thread_count;
         pc.chunk_size = chunk_size;
         pc.total_chunks = chunk_count;
         pc.unfinished_chunks.reserve(chunk_count);

@@ -12,6 +12,7 @@ import Fade from 'react-bootstrap/Fade';
 import {DateTime} from "luxon";
 import prettyBytes from "pretty-bytes";
 import DateBox from "./DateBox";
+import {ImWarning} from "react-icons/all";
 
 interface ProgressChunk {
     downloaded: number;
@@ -43,6 +44,8 @@ class ProgressChunkWrapper {
 interface Progress {
     chunkSize: number;
     chunksDownloading: number;
+    downloadThreads: number;
+    serverChunkSupport: boolean;
     chunksLeft: number;
     chunksTotal: number;
     currentChunks: { [key: number]: ProgressChunk }
@@ -106,7 +109,7 @@ const ProgressChunk = (props: ProgressChunkProps) => {
                 <div className={"progress-chunk-header"}>
                     <div>Chunk no {chunkNo}</div>
                     <div>Downloaded: <HumanBytes bytes={chunk.downloaded}/>/<HumanBytes bytes={chunk.toDownload}/></div>
-                    <div>Unpack: <HumanBytes bytes={chunk.toUnpack}/>/<HumanBytes bytes={chunk.unpacked}/></div>
+                    <div>Unpack: <HumanBytes bytes={chunk.unpacked}/>/<HumanBytes bytes={chunk.toUnpack}/></div>
                 </div>
                 <ProgressBar striped variant="success" now={progressPercent} />
             </div>
@@ -288,7 +291,14 @@ const ProgressPage = () => {
                 <ProgressBar striped variant="success" now={progressPercent} />
             </div>
             <div className="progress-page-right">
-                <p>Chunks left: {progress.chunksLeft} finished: {progress.chunksTotal - progress.chunksLeft} Active: {Object.keys(chunkInfos).length}</p>
+                {!progress.serverChunkSupport && <div className="progress-chunk-not-possible"><ImWarning/><div className="progress-chunk-not-possible-label">Multi-connection download not possible due to lack of support on server</div></div>}
+                <div className="progress-page-right-header">
+                    <div>Chunks left: {progress.chunksLeft}</div>
+                    <div>finished: {progress.chunksTotal - progress.chunksLeft}</div>
+                    <div>Active: {Object.keys(chunkInfos).length}</div>
+                    <div>Download threads: {progress.downloadThreads}</div>
+
+                </div>
                 {Object.entries(chunkInfos).reverse().map(([key, chunk]) => row(parseInt(key), chunk))}
             </div>
         </div>

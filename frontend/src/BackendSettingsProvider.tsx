@@ -26,9 +26,9 @@ interface BackendSettingsProviderProps {
 }
 
 export const BackendSettingsProvider = (props: BackendSettingsProviderProps) => {
-    const backendUrl = window.localStorage.getItem("backendUrl") ?? DEFAULT_BACKEND_URL;
-    const bearerToken = window.localStorage.getItem("bearerToken") ?? "";
-    const enableBearerToken = window.localStorage.getItem("bearerTokenEnabled") === "1" ?? false;
+    const backendUrl = window.localStorage.getItem("pipeDownloaderBackendUrl") ?? DEFAULT_BACKEND_URL;
+    const bearerToken = window.localStorage.getItem("pipeDownloaderBearerTokenPipe") ?? "";
+    const enableBearerToken = window.localStorage.getItem("pipeDownloaderBearerTokenEnabled") === "1" ?? false;
 
     const defaultBackendSettings = {
         backendUrl: backendUrl,
@@ -39,9 +39,9 @@ export const BackendSettingsProvider = (props: BackendSettingsProviderProps) => 
     const [backendSettings, _setBackendSettings] = useState<BackendSettings>(defaultBackendSettings);
     const setBackendSettings = useCallback(
         (settings: BackendSettings) => {
-            window.localStorage.setItem("backendUrl", settings.backendUrl);
-            window.localStorage.setItem("bearerToken", settings.bearerToken);
-            window.localStorage.setItem("bearerTokenEnabled", settings.enableBearerToken ? "1" : "0");
+            window.localStorage.setItem("pipeDownloaderBackendUrl", settings.backendUrl);
+            window.localStorage.setItem("pipeDownloaderBearerTokenPipe", settings.bearerToken);
+            window.localStorage.setItem("pipeDownloaderBearerTokenEnabled", settings.enableBearerToken ? "1" : "0");
             _setBackendSettings(settings);
         },
         [_setBackendSettings],

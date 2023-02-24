@@ -72,3 +72,23 @@ table th {
     font-size: 0.9rem;
 }
 
+.progress-page-right-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-left: 1rem
+}
+.progress-page-right-header div {
+    margin-right: 1rem;
+}
+.progress-chunk-not-possible {
+    margin-bottom: 1rem;
+    display: flex;
+    padding: 1rem;
+}
+.progress-chunk-not-possible-label {
+    margin-left: 0.4rem;
+    margin-top: -0.2rem;
+    font-size: 1.0rem;
+    font-weight: bold;
+}

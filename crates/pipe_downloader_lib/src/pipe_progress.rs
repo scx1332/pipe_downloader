@@ -121,6 +121,8 @@ pub struct InternalProgress {
     pub error_message_unpack: Option<String>,
     pub error_message: Option<String>,
     pub download_url: Option<String>,
+    pub download_threads: usize,
+    pub server_chunk_support: bool,
 }
 
 impl Default for InternalProgress {
@@ -147,6 +149,8 @@ impl Default for InternalProgress {
             error_message_download: None,
             error_message_unpack: None,
             download_url: None,
+            download_threads: 0,
+            server_chunk_support: false,
         }
     }
 }
@@ -156,6 +160,8 @@ impl Default for InternalProgress {
 pub struct PipeDownloaderProgress {
     pub start_time: chrono::DateTime<Utc>,
     pub current_time: chrono::DateTime<chrono::Utc>,
+    pub download_threads: usize,
+    pub server_chunk_support: bool,
     pub chunk_size: usize,
     pub downloaded: usize,
     pub unpacked: usize,
@@ -186,6 +192,7 @@ impl InternalProgress {
         PipeDownloaderProgress {
             start_time: self.start_time.to_utc().unwrap(),
             current_time: TimePair::now().to_utc().unwrap(),
+            download_threads: self.download_threads,
             chunk_size: self.chunk_size,
             downloaded: self.total_downloaded + self.chunk_downloaded.iter().sum::<usize>(),
             unpacked: self.total_unpacked,
@@ -208,6 +215,7 @@ impl InternalProgress {
             //progress_buckets_download: self.progress_buckets_download.clone(),
             //progress_buckets_unpack: self.progress_buckets_unpack.clone(),
             current_chunks: self.current_chunks.clone(),
+            server_chunk_support: self.server_chunk_support,
             //unpack_chunks: self.unpack_chunks.clone(),
         }
     }
