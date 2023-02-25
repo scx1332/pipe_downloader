@@ -1,9 +1,7 @@
 import React from "react";
 import "./Dashboard.css";
-import { Routes, Route, Link } from "react-router-dom";
 import { useConfigResult } from "./ConfigProvider";
 import BackendSettingsPage from "./BackendSettingsPage";
-import WelcomePage from "./WelcomePage";
 import ProgressPage from "./ProgressPage";
 
 const Dashboard = () => {
@@ -23,8 +21,7 @@ const Dashboard = () => {
     return (
         <div>
             <div>
-                        <ProgressPage/>
-
+                <ProgressPage />
             </div>
         </div>
     );

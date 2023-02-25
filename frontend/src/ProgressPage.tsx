@@ -1,18 +1,14 @@
-import React, {useCallback, useContext, useState} from "react";
-import {BackendSettingsContext} from "./BackendSettingsProvider";
-import {useBackendConfig} from "./ConfigProvider";
+import React, { useCallback, useContext, useState } from "react";
+import { BackendSettingsContext } from "./BackendSettingsProvider";
+import { useBackendConfig } from "./ConfigProvider";
 import "./ProgressPage.css";
-import {Simulate} from "react-dom/test-utils";
-import load = Simulate.load;
-import {backendFetch} from "./common/BackendCall";
-import ProgressBar from 'react-bootstrap/ProgressBar';
-import 'bootstrap/dist/css/bootstrap.min.css';
-import Collapse from 'react-bootstrap/Collapse';
-import Fade from 'react-bootstrap/Fade';
-import {DateTime} from "luxon";
+import { backendFetch } from "./common/BackendCall";
+import ProgressBar from "react-bootstrap/ProgressBar";
+import "bootstrap/dist/css/bootstrap.min.css";
+import { DateTime } from "luxon";
 import prettyBytes from "pretty-bytes";
 import DateBox from "./DateBox";
-import {ImWarning} from "react-icons/all";
+import { ImWarning } from "react-icons/all";
 
 interface ProgressFileInfo {
     fileNo: number;
@@ -47,7 +43,6 @@ class ProgressChunkWrapper {
     }
 }
 
-
 interface Progress {
     chunkSize: number;
     chunksDownloading: number;
@@ -55,7 +50,7 @@ interface Progress {
     serverChunkSupport: boolean;
     chunksLeft: number;
     chunksTotal: number;
-    currentChunks: { [key: number]: ProgressChunk }
+    currentChunks: { [key: number]: ProgressChunk };
     currentDownloadSpeed: number;
     currentUnpackSpeed: number;
     downloadUrl: string;
@@ -82,13 +77,12 @@ interface ProgressChunkProps {
     chunkWrapper: ProgressChunkWrapper;
 }
 
-
 const HumanBytes = (props: { bytes: number }) => {
     const bytesToHuman = (bytes: number) => {
-        return prettyBytes(bytes, {minimumFractionDigits: 3})
-    }
-    return <span title={`${props.bytes} bytes`}>{bytesToHuman(props.bytes)}</span>
-}
+        return prettyBytes(bytes, { minimumFractionDigits: 3 });
+    };
+    return <span title={`${props.bytes} bytes`}>{bytesToHuman(props.bytes)}</span>;
+};
 
 const ProgressChunk = (props: ProgressChunkProps) => {
     const chunkNo = props.chunkWrapper.chunkNo;
@@ -102,7 +96,7 @@ const ProgressChunk = (props: ProgressChunkProps) => {
         }, 100);
     }, [props.chunkWrapper.hidden]);
 
-    const progressPercent = chunk.downloaded / chunk.toDownload * 100;
+    const progressPercent = (chunk.downloaded / chunk.toDownload) * 100;
 
     let className = "progress-chunk";
     if (visible) {
@@ -111,38 +105,47 @@ const ProgressChunk = (props: ProgressChunkProps) => {
         className += " progress-chunk-hidden";
     }
 
-
-
-    return <div className={className}>
+    return (
+        <div className={className}>
             <div className={"progress-chunk-inner"}>
                 <div className={"progress-chunk-header"}>
                     <div>Chunk no {chunkNo}</div>
-                    <div>Downloaded: <HumanBytes bytes={chunk.downloaded}/>/<HumanBytes bytes={chunk.toDownload}/></div>
-                    <div>Unpack: <HumanBytes bytes={chunk.unpacked}/>/<HumanBytes bytes={chunk.toUnpack}/></div>
+                    <div>
+                        Downloaded: <HumanBytes bytes={chunk.downloaded} />/<HumanBytes bytes={chunk.toDownload} />
+                    </div>
+                    <div>
+                        Unpack: <HumanBytes bytes={chunk.unpacked} />/<HumanBytes bytes={chunk.toUnpack} />
+                    </div>
                 </div>
                 <ProgressBar striped variant="success" now={progressPercent} />
             </div>
         </div>
+    );
 };
-
 
 interface LastFileEntryProps {
     lastFile: ProgressFileInfo;
 }
 const LastFileEntry = (props: LastFileEntryProps) => {
     const lastFile = props.lastFile;
-    return <div className={"last-file-entry"}>
-        <div className={"last-file-entry-header"}>
-            <div className={"last-file-entry-no"}>{lastFile.fileNo}</div>
-            <div className={"last-file-entry-size"}><HumanBytes bytes={lastFile.fileSize}/></div>
-            {lastFile.finished ? <div className={"last-file-entry-finished"}>Finished</div> : <div className={"last-file-entry-finished"}>Not finished</div>}
+    return (
+        <div className={"last-file-entry"}>
+            <div className={"last-file-entry-header"}>
+                <div className={"last-file-entry-no"}>{lastFile.fileNo}</div>
+                <div className={"last-file-entry-size"}>
+                    <HumanBytes bytes={lastFile.fileSize} />
+                </div>
+                {lastFile.finished ? (
+                    <div className={"last-file-entry-finished"}>Finished</div>
+                ) : (
+                    <div className={"last-file-entry-finished"}>Not finished</div>
+                )}
+            </div>
+
+            <div className={"last-file-entry-name"}>{lastFile.fileName}</div>
         </div>
-
-        <div className={"last-file-entry-name"}>{lastFile.fileName}</div>
-
-    </div>
-
-}
+    );
+};
 
 const ProgressPage = () => {
     const { backendSettings } = useContext(BackendSettingsContext);
@@ -150,45 +153,51 @@ const ProgressPage = () => {
     const [progress, setProgress] = useState<Progress | null>(null);
 
     const [nextRefresh, setNextRefresh] = useState(0);
-    const [chunkInfos, setChunkInfos] = useState<{ [key: number]: ProgressChunkWrapper }>({})
+    const [chunkInfos, setChunkInfos] = useState<{ [key: number]: ProgressChunkWrapper }>({});
     const [finished, setFinished] = useState(false);
 
-    const updateChunks = useCallback( (progress: Progress) => {
-        for (const chunkNo in chunkInfos) {
-            const chunkInfo = chunkInfos[chunkNo];
-            if (chunkInfo.chunk.downloaded == chunkInfo.chunk.toDownload && chunkInfo.chunk.unpacked == chunkInfo.chunk.toUnpack) {
-                if (chunkInfo.timeHidden && DateTime.now().diff(chunkInfo.timeHidden, 'seconds').seconds > 3) {
-                    if (!(chunkNo in progress.currentChunks)) {
-                        delete chunkInfos[chunkNo];
-                        continue;
+    const updateChunks = useCallback(
+        (progress: Progress) => {
+            for (const chunkNo in chunkInfos) {
+                const chunkInfo = chunkInfos[chunkNo];
+                if (
+                    chunkInfo.chunk.downloaded == chunkInfo.chunk.toDownload &&
+                    chunkInfo.chunk.unpacked == chunkInfo.chunk.toUnpack
+                ) {
+                    if (chunkInfo.timeHidden && DateTime.now().diff(chunkInfo.timeHidden, "seconds").seconds > 3) {
+                        if (!(chunkNo in progress.currentChunks)) {
+                            delete chunkInfos[chunkNo];
+                            continue;
+                        }
+                    }
+                    if (!chunkInfo.hidden && DateTime.now().diff(chunkInfo.timeShown, "seconds").seconds > 2) {
+                        chunkInfo.hidden = true;
+                        chunkInfo.timeHidden = DateTime.now();
+                    }
+                } else {
+                    if (chunkNo in progress.currentChunks) {
+                        chunkInfo.chunk = progress.currentChunks[chunkNo];
+                    } else {
+                        chunkInfo.chunk.downloaded = chunkInfo.chunk.toDownload;
+                        chunkInfo.chunk.unpacked = chunkInfo.chunk.toUnpack;
                     }
                 }
-                if (!chunkInfo.hidden && DateTime.now().diff(chunkInfo.timeShown, 'seconds').seconds > 2) {
-                    chunkInfo.hidden = true;
-                    chunkInfo.timeHidden = DateTime.now();
-                }
-            } else {
-                if (chunkNo in progress.currentChunks) {
-                    chunkInfo.chunk = progress.currentChunks[chunkNo];
-                } else {
-                    chunkInfo.chunk.downloaded = chunkInfo.chunk.toDownload;
-                    chunkInfo.chunk.unpacked = chunkInfo.chunk.toUnpack;
-                }
             }
-        }
-    }, [setProgress, chunkInfos, setChunkInfos, setFinished]);
+        },
+        [setProgress, chunkInfos, setChunkInfos, setFinished],
+    );
 
     const loadProgress = useCallback(async () => {
         try {
             const response = await backendFetch(backendSettings, `/progress`);
             const response_json = await response.json();
-            const progress : Progress = response_json.progress;
+            const progress: Progress = response_json.progress;
             setProgress(response_json.progress);
 
             updateChunks(response_json.progress);
 
-            const finishTime = (progress.finishTime) ? DateTime.fromISO(progress.finishTime) : null;
-            if (finishTime){
+            const finishTime = progress.finishTime ? DateTime.fromISO(progress.finishTime) : null;
+            if (finishTime) {
                 setFinished(true);
             }
 
@@ -225,14 +234,12 @@ const ProgressPage = () => {
         }
     }, [finished, setNextRefresh, nextRefresh, loadProgress]);
 
-
-    function row(key: number, chunk: ProgressChunkWrapper ) {
+    function row(key: number, chunk: ProgressChunkWrapper) {
         return <ProgressChunk key={chunk.chunkNo} chunkWrapper={chunk} />;
     }
-    function row_last_files(key: number, lastFile: ProgressFileInfo ) {
+    function row_last_files(key: number, lastFile: ProgressFileInfo) {
         return <LastFileEntry key={key} lastFile={lastFile} />;
     }
-
 
     if (progress == null) {
         return (
@@ -245,15 +252,11 @@ const ProgressPage = () => {
             </div>
         );
     }
-    const isFinished = progress.finished;
-
-
-
-    const progressPercent = progress.downloaded/progress.totalDownloadSize * 100;
+    const progressPercent = (progress.downloaded / progress.totalDownloadSize) * 100;
     const serverTime = DateTime.fromISO(progress.currentTime);
     const etaSec = progress.etaSec;
-    const eta = serverTime.plus({seconds: etaSec});
-    const finishTime = (progress.finishTime) ? DateTime.fromISO(progress.finishTime) : null;
+    const eta = serverTime.plus({ seconds: etaSec });
+    const finishTime = progress.finishTime ? DateTime.fromISO(progress.finishTime) : null;
     const startTime = DateTime.fromISO(progress.startTime);
 
     return (
@@ -262,85 +265,116 @@ const ProgressPage = () => {
                 <h4>Pipe downloader {config.version}</h4>
                 <p>endpoint {backendSettings.backendUrl}</p>
                 <div className={"progress-page-dates"}>
-                    <DateBox date={progress.startTime} title={"Start time"} minimal={false}/>
-                    <DateBox date={progress.currentTime} title={"Update time"} minimal={false}/>
-                    {(progress.finishTime) ?  <DateBox date={progress.finishTime} title={"Finish time"} minimal={false}/>
-                    :<DateBox date={eta.toISO()} title={"Estimated finish"} minimal={false}/>}
+                    <DateBox date={progress.startTime} title={"Start time"} minimal={false} />
+                    <DateBox date={progress.currentTime} title={"Update time"} minimal={false} />
+                    {progress.finishTime ? (
+                        <DateBox date={progress.finishTime} title={"Finish time"} minimal={false} />
+                    ) : (
+                        <DateBox date={eta.toISO()} title={"Estimated finish"} minimal={false} />
+                    )}
                 </div>
 
-
-                <div className={"download-url"} >
+                <div className={"download-url"}>
                     <div className={"header"}>Downloading file:</div>
-                    <input readOnly={true} value={progress.downloadUrl}/>
+                    <input readOnly={true} value={progress.downloadUrl} />
                 </div>
 
-                {finishTime ? <div>
-                    <table>
-                        <tbody>
-                        <tr>
-                            <th>Successfully Downloaded:</th>
-                            <td><HumanBytes bytes={progress.downloaded}/></td>
-                        </tr>
-                        <tr>
-                            <th>Successfully unpacked:</th>
-                            <td><HumanBytes bytes={progress.unpacked}/></td>
-                        </tr>
-                        <tr>
-                            <th>Successfully unpacked files:</th>
-                            <td>{progress.unpackedFiles}</td>
-                        </tr>
-                        <tr>
-                            <th>Elapsed time:</th>
-                            <td>{finishTime.diff(startTime).toFormat("hh:mm:ss")}</td>
-                        </tr>
-                        </tbody>
-                    </table>
-                </div> : <div>
-                    <table>
-                        <tbody>
-                            <tr>
-                                <th>Download speed:</th>
-                                <td><HumanBytes bytes={progress.currentDownloadSpeed}/>/s</td>
-                            </tr>
-                            <tr>
-                                <th>Unpack speed:</th>
-                                <td><HumanBytes bytes={progress.currentUnpackSpeed}/>/s</td>
-                            </tr>
-                            <tr>
-                                <th>Downloaded:</th>
-                                <td><HumanBytes bytes={progress.downloaded}/>/<HumanBytes bytes={progress.totalDownloadSize}/></td>
-                            </tr>
-                            <tr>
-                                <th>Unpacked:</th>
-                                <td><HumanBytes bytes={progress.unpacked}/></td>
-                            </tr>
-                            <tr>
-                                <th>Files unpacked:</th>
-                                <td>{progress.unpackedFiles}</td>
-                            </tr>
-                            <tr>
-                                <th>Percent downloaded:</th>
-                                <td>{progressPercent.toFixed(5)}%</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                }
+                {finishTime ? (
+                    <div>
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <th>Successfully Downloaded:</th>
+                                    <td>
+                                        <HumanBytes bytes={progress.downloaded} />
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Successfully unpacked:</th>
+                                    <td>
+                                        <HumanBytes bytes={progress.unpacked} />
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Successfully unpacked files:</th>
+                                    <td>{progress.unpackedFiles}</td>
+                                </tr>
+                                <tr>
+                                    <th>Elapsed time:</th>
+                                    <td>{finishTime.diff(startTime).toFormat("hh:mm:ss")}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <div>
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <th>Download speed:</th>
+                                    <td>
+                                        <HumanBytes bytes={progress.currentDownloadSpeed} />
+                                        /s
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Unpack speed:</th>
+                                    <td>
+                                        <HumanBytes bytes={progress.currentUnpackSpeed} />
+                                        /s
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Downloaded:</th>
+                                    <td>
+                                        <HumanBytes bytes={progress.downloaded} />/
+                                        <HumanBytes bytes={progress.totalDownloadSize} />
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Unpacked:</th>
+                                    <td>
+                                        <HumanBytes bytes={progress.unpacked} />
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Files unpacked:</th>
+                                    <td>{progress.unpackedFiles}</td>
+                                </tr>
+                                <tr>
+                                    <th>Percent downloaded:</th>
+                                    <td>{progressPercent.toFixed(5)}%</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                )}
 
                 <ProgressBar striped variant="success" now={progressPercent} />
 
-                {progress.lastUnpackedFiles.slice(0).reverse().map((lastFile, index) => row_last_files(index, lastFile))}
-
+                {progress.lastUnpackedFiles
+                    .slice(0)
+                    .reverse()
+                    .map((lastFile, index) => row_last_files(index, lastFile))}
             </div>
             <div className="progress-page-right">
-                {!progress.serverChunkSupport && <div className="progress-chunk-not-possible"><ImWarning/><div className="progress-chunk-not-possible-label">Multi-connection download not possible due to lack of support on server</div></div>}
+                {!progress.serverChunkSupport && (
+                    <div className="progress-chunk-not-possible">
+                        <ImWarning />
+                        <div className="progress-chunk-not-possible-label">
+                            Multi-connection download not possible due to lack of support on server
+                        </div>
+                    </div>
+                )}
                 <div className="progress-page-right-header">
                     <div>Chunks left: {progress.chunksLeft}</div>
                     <div>finished: {progress.chunksTotal - progress.chunksLeft}</div>
                     <div>Active: {Object.keys(chunkInfos).length}</div>
                     <div>Download threads: {progress.downloadThreads}</div>
                 </div>
-                {Object.entries(chunkInfos).reverse().map(([key, chunk]) => row(parseInt(key), chunk))}
+                {Object.entries(chunkInfos)
+                    .reverse()
+                    .map(([key, chunk]) => row(parseInt(key), chunk))}
             </div>
         </div>
     );

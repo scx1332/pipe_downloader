@@ -65,8 +65,6 @@ const DateBox = (props: DateBoxProps) => {
             message = "in " + Math.floor(intervalFut.length("seconds")) + " sec.";
         }
 
-
-
         let dateMsg = luxonDate.toFormat("yyyy-LL-dd HH:mm:ss");
         if (luxonDate.toFormat("yyyy-LL-dd") === currentDate.toFormat("yyyy-LL-dd")) {
             dateMsg = luxonDate.toFormat("HH:mm:ss");

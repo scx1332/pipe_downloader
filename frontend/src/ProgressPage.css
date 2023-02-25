@@ -76,7 +76,7 @@ table th {
     display: flex;
     flex-direction: row;
     align-items: center;
-    margin-left: 1rem
+    margin-left: 1rem;
 }
 .progress-page-right-header div {
     margin-right: 1rem;
@@ -89,13 +89,12 @@ table th {
 .progress-chunk-not-possible-label {
     margin-left: 0.4rem;
     margin-top: -0.2rem;
-    font-size: 1.0rem;
+    font-size: 1rem;
     font-weight: bold;
 }
 
 .last-file-entry {
     margin-bottom: 1rem;
-
 }
 .last-file-entry-header {
     display: flex;
@@ -103,5 +102,3 @@ table th {
     justify-content: space-between;
     align-items: center;
 }
-
-
