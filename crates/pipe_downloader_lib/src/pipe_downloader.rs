@@ -1,13 +1,10 @@
 use flate2::read::GzDecoder;
-
 use std::fs::File;
-
 use std::path::{Path, PathBuf};
-
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::thread;
 use std::time::Instant;
+use std::{fs, thread};
 
 #[cfg(all(feature = "with-lz4", not(feature = "lz4-rust")))]
 use lz4::Decoder as Lz4Decoder;
@@ -21,7 +18,7 @@ use lz4_flex::frame::FrameDecoder;
 
 use crate::pipe_engine::download_loop;
 use crate::pipe_engine::{decode_loop, init_download_loop};
-use crate::pipe_progress::InternalProgress;
+use crate::pipe_progress::{InternalProgress, UnpackedFileInfo};
 use crate::pipe_utils::bytes_to_human;
 use crate::pipe_utils::resolve_url;
 use crate::pipe_wrapper::{DataChunk, MpscReaderFromReceiver};
@@ -37,6 +34,76 @@ pub struct PipeDownloader {
     download_started: bool,
     target_path: PathBuf,
     thread_last_stage: Option<thread::JoinHandle<()>>,
+}
+
+fn tar_unpack(
+    dst: &Path,
+    tar: &mut Archive<MpscReaderFromReceiver>,
+    options: PipeDownloaderOptions,
+    pc: Arc<Mutex<InternalProgress>>,
+) -> std::io::Result<()> {
+    if dst.symlink_metadata().is_err() {
+        fs::create_dir_all(dst)?
+    }
+
+    // Canonicalizing the dst directory will prepend the path with '\\?\'
+    // on windows which will allow windows APIs to treat the path as an
+    // extended-length path with a 32,767 character limit. Otherwise all
+    // unpacked paths over 260 characters will fail on creation with a
+    // NotFound exception.
+    let dst = &dst.canonicalize().unwrap_or(dst.to_path_buf());
+
+    // Delay any directory entries until the end (they will be created if needed by
+    // descendants), to ensure that directory permissions do not interfer with descendant
+    // extraction.
+    let mut directories = Vec::new();
+    for entry in tar.entries()? {
+        let mut file = entry?;
+        println!(
+            "entry: {:?}, path {}",
+            file.header().entry_type(),
+            file.path()?.display()
+        );
+        if options.ignore_symlinks && file.header().entry_type() == tar::EntryType::Symlink {
+            continue;
+        }
+        if options.ignore_symlinks && file.header().entry_type() == tar::EntryType::Link {
+            continue;
+        }
+        let file_header_name = file.path()?.display().to_string();
+        let file_header_size = file.header().size().unwrap_or(0);
+        {
+            let mut pc = pc.lock().unwrap();
+            let file_no = pc.unpacked_files + 1;
+            pc.last_unpacked_files.push_back(UnpackedFileInfo {
+                file_no,
+                file_name: file_header_name,
+                file_size: file_header_size,
+                finished: false,
+            });
+            if pc.last_unpacked_files.len() > 10 {
+                pc.last_unpacked_files.pop_front();
+            }
+        }
+
+        if file.header().entry_type() == tar::EntryType::Directory {
+            directories.push(file);
+        } else {
+            file.unpack_in(dst)?;
+        }
+        {
+            let mut pc = pc.lock().unwrap();
+            if let Some(last_unp_file) = pc.last_unpacked_files.back_mut() {
+                last_unp_file.finished = true;
+            }
+            pc.unpacked_files += 1;
+        }
+    }
+
+    for mut dir in directories {
+        dir.unpack_in(dst)?;
+    }
+    Ok(())
 }
 
 impl PipeDownloader {
@@ -79,13 +146,13 @@ impl PipeDownloader {
             let t = thread::spawn(move || {
                 init_download_loop(download_thread_count, options, pc.clone(), &download_url)
             });
-            
+
             loop {
                 if t.is_finished() {
                     match t.join().unwrap() {
                         Ok(download_loop_init_result) => {
                             log::info!("Download loop initialized");
-                            break download_loop_init_result
+                            break download_loop_init_result;
                         }
                         Err(err) => {
                             log::error!("Error when initializing download: {:?}", err);
@@ -189,6 +256,7 @@ impl PipeDownloader {
         let download_url = url;
 
         let pc = self.progress_context.clone();
+        let options = self.options.clone();
         self.thread_last_stage = Some(thread::spawn(move || {
             let download_url = match resolve_url(download_url, pc.clone()) {
                 Ok(url) => url,
@@ -200,7 +268,8 @@ impl PipeDownloader {
 
             let res = if download_url.contains(".tar.") {
                 let mut archive = Archive::new(p2);
-                match archive.unpack(target_path) {
+
+                match tar_unpack(&target_path, &mut archive, options, pc.clone()) {
                     Ok(_) => {
                         log::info!("Successfully unpacked");
                         Ok(())
@@ -210,6 +279,17 @@ impl PipeDownloader {
                         Err(err)
                     }
                 }
+
+                /* match archive.unpack(target_path) {
+                    Ok(_) => {
+                        log::info!("Successfully unpacked");
+                        Ok(())
+                    }
+                    Err(err) => {
+                        log::error!("Error while unpacking {:?}", err);
+                        Err(err)
+                    }
+                }*/
             } else {
                 let mut output_file = File::create(&target_path).unwrap();
                 match std::io::copy(&mut p2, &mut output_file) {

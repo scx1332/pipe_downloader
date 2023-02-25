@@ -18,6 +18,8 @@ pub struct PipeDownloaderOptions {
     /// You can improve download speed by increasing this number,
     /// note that this will also increase memory usage
     pub download_threads: usize,
+    /// Ignore symlinks when un-taring
+    pub ignore_symlinks: bool,
 }
 
 impl Default for PipeDownloaderOptions {
@@ -28,13 +30,18 @@ impl Default for PipeDownloaderOptions {
             max_download_speed: None,
             force_no_chunks: false,
             download_threads: 2,
+            ignore_symlinks: false,
         }
     }
 }
 
 impl PipeDownloaderOptions {
     /// Constructs downloader from given options.
-    pub async fn start_download(self, url: &str, target_path: &Path) -> anyhow::Result<PipeDownloader> {
+    pub async fn start_download(
+        self,
+        url: &str,
+        target_path: &Path,
+    ) -> anyhow::Result<PipeDownloader> {
         let mut pd = PipeDownloader::new(url, target_path, self);
         pd.start_download().await?;
         Ok(pd)

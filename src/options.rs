@@ -61,4 +61,8 @@ pub struct CliOptions {
 
     #[structopt(long = "add-cors")]
     pub add_cors: bool,
+
+    /// Ignore symlinks when un-taring
+    #[structopt(long = "ignore-symlinks")]
+    pub ignore_symlinks: bool,
 }

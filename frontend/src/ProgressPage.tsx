@@ -14,6 +14,13 @@ import prettyBytes from "pretty-bytes";
 import DateBox from "./DateBox";
 import {ImWarning} from "react-icons/all";
 
+interface ProgressFileInfo {
+    fileNo: number;
+    fileName: string;
+    fileSize: number;
+    finished: boolean;
+}
+
 interface ProgressChunk {
     downloaded: number;
     toDownload: number;
@@ -67,6 +74,8 @@ interface Progress {
     totalDownloadSize: number;
     totalUnpackSize: number;
     unpacked: number;
+    unpackedFiles: number;
+    lastUnpackedFiles: ProgressFileInfo[];
 }
 
 interface ProgressChunkProps {
@@ -115,6 +124,25 @@ const ProgressChunk = (props: ProgressChunkProps) => {
             </div>
         </div>
 };
+
+
+interface LastFileEntryProps {
+    lastFile: ProgressFileInfo;
+}
+const LastFileEntry = (props: LastFileEntryProps) => {
+    const lastFile = props.lastFile;
+    return <div className={"last-file-entry"}>
+        <div className={"last-file-entry-header"}>
+            <div className={"last-file-entry-no"}>{lastFile.fileNo}</div>
+            <div className={"last-file-entry-size"}><HumanBytes bytes={lastFile.fileSize}/></div>
+            {lastFile.finished ? <div className={"last-file-entry-finished"}>Finished</div> : <div className={"last-file-entry-finished"}>Not finished</div>}
+        </div>
+
+        <div className={"last-file-entry-name"}>{lastFile.fileName}</div>
+
+    </div>
+
+}
 
 const ProgressPage = () => {
     const { backendSettings } = useContext(BackendSettingsContext);
@@ -199,7 +227,10 @@ const ProgressPage = () => {
 
 
     function row(key: number, chunk: ProgressChunkWrapper ) {
-        return <ProgressChunk key={key} chunkWrapper={chunk} />;
+        return <ProgressChunk key={chunk.chunkNo} chunkWrapper={chunk} />;
+    }
+    function row_last_files(key: number, lastFile: ProgressFileInfo ) {
+        return <LastFileEntry key={key} lastFile={lastFile} />;
     }
 
 
@@ -255,6 +286,10 @@ const ProgressPage = () => {
                             <td><HumanBytes bytes={progress.unpacked}/></td>
                         </tr>
                         <tr>
+                            <th>Successfully unpacked files:</th>
+                            <td>{progress.unpackedFiles}</td>
+                        </tr>
+                        <tr>
                             <th>Elapsed time:</th>
                             <td>{finishTime.diff(startTime).toFormat("hh:mm:ss")}</td>
                         </tr>
@@ -280,6 +315,10 @@ const ProgressPage = () => {
                                 <td><HumanBytes bytes={progress.unpacked}/></td>
                             </tr>
                             <tr>
+                                <th>Files unpacked:</th>
+                                <td>{progress.unpackedFiles}</td>
+                            </tr>
+                            <tr>
                                 <th>Percent downloaded:</th>
                                 <td>{progressPercent.toFixed(5)}%</td>
                             </tr>
@@ -289,6 +328,9 @@ const ProgressPage = () => {
                 }
 
                 <ProgressBar striped variant="success" now={progressPercent} />
+
+                {progress.lastUnpackedFiles.slice(0).reverse().map((lastFile, index) => row_last_files(index, lastFile))}
+
             </div>
             <div className="progress-page-right">
                 {!progress.serverChunkSupport && <div className="progress-chunk-not-possible"><ImWarning/><div className="progress-chunk-not-possible-label">Multi-connection download not possible due to lack of support on server</div></div>}
@@ -297,7 +339,6 @@ const ProgressPage = () => {
                     <div>finished: {progress.chunksTotal - progress.chunksLeft}</div>
                     <div>Active: {Object.keys(chunkInfos).length}</div>
                     <div>Download threads: {progress.downloadThreads}</div>
-
                 </div>
                 {Object.entries(chunkInfos).reverse().map(([key, chunk]) => row(parseInt(key), chunk))}
             </div>

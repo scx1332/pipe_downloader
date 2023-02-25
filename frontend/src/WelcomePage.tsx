@@ -9,7 +9,7 @@ const WelcomePage = () => {
 
     return (
         <div className="welcome-page">
-            <h1>Vite template</h1>
+            <h1>Pipe downloader</h1>
             <p>Connected to the endpoint {backendSettings.backendUrl}</p>
             <p>Frontend version {APP_VERSION}</p>
             <p>Backend version {config.version}</p>

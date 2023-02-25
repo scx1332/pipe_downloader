@@ -92,3 +92,16 @@ table th {
     font-size: 1.0rem;
     font-weight: bold;
 }
+
+.last-file-entry {
+    margin-bottom: 1rem;
+
+}
+.last-file-entry-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+
+
