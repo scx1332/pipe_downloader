@@ -2,7 +2,7 @@ use crate::tsutils::TimePair;
 use chrono::Utc;
 #[cfg(feature = "serde")]
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::time;
 use std::time::Instant;
 
@@ -98,6 +98,15 @@ pub struct DownloadChunkProgress {
     pub to_unpack: usize,
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "camelCase"))]
+#[derive(Debug, Clone)]
+pub struct UnpackedFileInfo {
+    pub file_no: usize,
+    pub file_name: String,
+    pub file_size: u64,
+    pub finished: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct InternalProgress {
     pub start_time: TimePair,
@@ -123,6 +132,8 @@ pub struct InternalProgress {
     pub download_url: Option<String>,
     pub download_threads: usize,
     pub server_chunk_support: bool,
+    pub unpacked_files: usize,
+    pub last_unpacked_files: VecDeque<UnpackedFileInfo>,
 }
 
 impl Default for InternalProgress {
@@ -151,6 +162,8 @@ impl Default for InternalProgress {
             download_url: None,
             download_threads: 0,
             server_chunk_support: false,
+            last_unpacked_files: VecDeque::new(),
+            unpacked_files: 0,
         }
     }
 }
@@ -182,6 +195,8 @@ pub struct PipeDownloaderProgress {
     pub chunks_total: usize,
     pub chunks_left: usize,
     pub current_chunks: BTreeMap<usize, DownloadChunkProgress>,
+    pub unpacked_files: usize,
+    pub last_unpacked_files: VecDeque<UnpackedFileInfo>,
     //pub unpack_chunks: BTreeMap<usize, UnpackChunkProgress>,
     //pub progress_buckets_download: ProgressHistory,
     //pub progress_buckets_unpack: ProgressHistory,
@@ -216,6 +231,8 @@ impl InternalProgress {
             //progress_buckets_unpack: self.progress_buckets_unpack.clone(),
             current_chunks: self.current_chunks.clone(),
             server_chunk_support: self.server_chunk_support,
+            unpacked_files: self.unpacked_files,
+            last_unpacked_files: self.last_unpacked_files.clone(),
             //unpack_chunks: self.unpack_chunks.clone(),
         }
     }

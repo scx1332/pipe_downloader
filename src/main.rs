@@ -64,8 +64,10 @@ async fn main() -> anyhow::Result<()> {
         max_download_speed: opt.limit_speed,
         force_no_chunks: opt.force_no_partial_content,
         download_threads: opt.download_threads,
+        ignore_symlinks: opt.ignore_symlinks,
     }
-    .start_download(&opt.url, &opt.output_dir).await?;
+    .start_download(&opt.url, &opt.output_dir)
+    .await?;
 
     let server_data = Data::new(Box::new(ServerData {
         pipe_downloader: Arc::new(Mutex::new(pd)),
