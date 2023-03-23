@@ -1,7 +1,7 @@
-use std::io::Read;
-use std::str::FromStr;
 use anyhow::anyhow;
 use reqwest::header::{HeaderMap, HeaderValue};
+use std::io::Read;
+use std::str::FromStr;
 
 fn main() -> anyhow::Result<()> {
     let client = reqwest::blocking::Client::new();
@@ -16,23 +16,22 @@ fn main() -> anyhow::Result<()> {
 
     let mut response = client.get(download_url).headers(headers).send()?;
 
-    let status = response.status();
+    let _status = response.status();
     let content_length = response
         .headers()
         .get("Content-Length")
         .ok_or_else(|| anyhow::anyhow!("Content-Length header not found"))?
         .to_str()?;
 
-    let mut buf = vec![0; 30 * 1024 * 1024];
+    let _buf = vec![0; 30 * 1024 * 1024];
     let content_length = usize::from_str(content_length)?;
     let mut total_downloaded: usize = 0;
-    let start_time = std::time::Instant::now();
+    let _start_time = std::time::Instant::now();
     let mut buf_vec: Vec<u8> = Vec::with_capacity(30 * 1024 * 1024);
 
     let mut buf = vec![0; 1024 * 1024];
 
     loop {
-
         let left_to_download = content_length - total_downloaded;
         let max_buf_size = std::cmp::min(buf.len(), left_to_download);
         if max_buf_size == 0 {
