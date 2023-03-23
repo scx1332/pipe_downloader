@@ -8,11 +8,9 @@ license.workspace = true
 
 [dependencies]
 structopt = { workspace = true }
-tokio = { workspace = true, features = ["rt", "macros"] }
-warp = { workspace = true }
 actix-web = { workspace = true }
-async-stream = "0.3.4"
-futures-core = "0.3.27"
-futures-util = "0.3.27"
-bytes = "1.1.0"
-fastrand = "1.9.0"
+async-stream = { workspace = true }
+futures-core = { workspace = true }
+futures-util = { workspace = true }
+bytes = { workspace = true }
+fastrand = { workspace = true }

@@ -1,16 +1,16 @@
-use std::iter::repeat_with;
-use std::path::PathBuf;
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use structopt::StructOpt;
-use actix_web::http::header::ContentDisposition;
-use async_stream::stream;
-use futures_core::stream::Stream;
 use actix_web::get;
+use actix_web::http::header::ContentDisposition;
+use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use async_stream::stream;
 use bytes::Bytes;
 use bytes::BytesMut;
+use futures_core::stream::Stream;
+use std::iter::repeat_with;
+use std::path::PathBuf;
+use structopt::StructOpt;
 
 fn semi_random_stream(size: usize) -> impl Stream<Item = Result<Bytes, std::io::Error>> {
-    const BUF_SIZE: usize = 1 * 1024 * 1024;
+    const BUF_SIZE: usize = 1024 * 1024;
     const RAND_SEED: u64 = 4673746563;
     let _random_bytes: Vec<u8> = vec![0; std::cmp::min(BUF_SIZE, size)];
     let rng = fastrand::Rng::with_seed(RAND_SEED);
@@ -18,17 +18,17 @@ fn semi_random_stream(size: usize) -> impl Stream<Item = Result<Bytes, std::io::
     let random_bytes = Bytes::from(random_bytes);
 
     stream! {
-            let mut bytes_sent = 0;
-            loop {
-                let _buffer = BytesMut::with_capacity(BUF_SIZE);
-                if bytes_sent >= size {
-                    break;
-                }
-                let current_size = std::cmp::min(BUF_SIZE, size - bytes_sent);
-                yield Ok(random_bytes.slice(0..current_size));
-                bytes_sent += current_size;
+        let mut bytes_sent = 0;
+        loop {
+            let _buffer = BytesMut::with_capacity(BUF_SIZE);
+            if bytes_sent >= size {
+                break;
             }
+            let current_size = std::cmp::min(BUF_SIZE, size - bytes_sent);
+            yield Ok(random_bytes.slice(0..current_size));
+            bytes_sent += current_size;
         }
+    }
 }
 
 #[derive(StructOpt, Debug)]

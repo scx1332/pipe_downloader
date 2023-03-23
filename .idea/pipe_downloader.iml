@@ -13,6 +13,7 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/pipe_downloader_lib/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/pipe_serve/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/pipe_utils/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/pipe_mock_serve/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/frontend" />
     </content>
