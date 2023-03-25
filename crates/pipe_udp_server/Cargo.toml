@@ -1,0 +1,11 @@
+[package]
+name = "pipe_udp_server"
+description = "Udp server for perf testing"
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+structopt = { workspace = true }
+tokio = { workspace = true, features = ["net"] }
