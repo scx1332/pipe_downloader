@@ -1,5 +1,5 @@
-use std::mem::MaybeUninit;
 use sntpc::{Error, NtpContext, NtpResult, NtpTimestampGenerator, NtpUdpSocket, Result};
+use std::mem::MaybeUninit;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::ops::Add;
 use std::sync::{Arc, Mutex, Once};
@@ -28,11 +28,7 @@ impl NtpTimestampGenerator for StdTimestampGen {
 struct UdpSocketWrapper(UdpSocket);
 
 impl NtpUdpSocket for UdpSocketWrapper {
-    fn send_to<T: ToSocketAddrs>(
-        &self,
-        buf: &[u8],
-        addr: T,
-    ) -> Result<usize> {
+    fn send_to<T: ToSocketAddrs>(&self, buf: &[u8], addr: T) -> Result<usize> {
         match self.0.send_to(buf, addr) {
             Ok(usize) => Ok(usize),
             Err(_) => Err(Error::Network),
@@ -46,8 +42,7 @@ impl NtpUdpSocket for UdpSocketWrapper {
     }
 }
 pub fn get_time_from_single_serv(serv: &str) -> Result<NtpResult> {
-    let socket =
-        UdpSocket::bind("0.0.0.0:0").expect("Unable to crate UDP socket");
+    let socket = UdpSocket::bind("0.0.0.0:0").expect("Unable to crate UDP socket");
     socket
         .set_read_timeout(Some(Duration::from_secs(2)))
         .expect("Unable to set UDP socket read timeout");
@@ -62,7 +57,7 @@ pub struct WorldTimer {
 }
 
 pub struct WorldTimerWrapper {
-    pub world_timer: Arc<Mutex<WorldTimer>>
+    pub world_timer: Arc<Mutex<WorldTimer>>,
 }
 
 impl WorldTimer {
@@ -78,8 +73,8 @@ pub fn world_time_wrapper() -> &'static WorldTimerWrapper {
     static mut WORLD_TIME_WRAPPER: MaybeUninit<WorldTimerWrapper> = MaybeUninit::uninit();
     static ONCE: Once = Once::new();
 
-    let world_time = WorldTimerWrapper{
-        world_timer:Arc::new(Mutex::new(WorldTimer::default()))
+    let world_time = WorldTimerWrapper {
+        world_timer: Arc::new(Mutex::new(WorldTimer::default())),
     };
 
     // SAFETY: This is simple singleton pattern
@@ -98,7 +93,6 @@ pub fn world_time_wrapper() -> &'static WorldTimerWrapper {
 pub fn init_world_time() {
     let world_time = get_time();
     *world_time_wrapper().world_timer.lock().unwrap() = world_time;
-
 }
 
 fn get_time() -> WorldTimer {
@@ -108,13 +102,13 @@ fn get_time() -> WorldTimer {
         "time.apple.com:123",
         "time.facebook.com:123",
         "time.fu-berlin.de:123",
-        "ntp.fizyka.umk.pl:123"
+        "ntp.fizyka.umk.pl:123",
     ];
     let mut avg_difference = 0;
     let mut number_of_reads = 0;
     let mut measurements = Vec::new();
     for serv in servs.iter() {
-        let res2 = match get_time_from_single_serv(serv){
+        let res2 = match get_time_from_single_serv(serv) {
             Ok(res2) => res2,
             Err(e) => {
                 println!("Error when getting time {}: {:?}", serv, e);
@@ -138,17 +132,15 @@ fn get_time() -> WorldTimer {
         }
 
         log::info!("Average difference: {}", avg_difference);
-        log::info!("Average error: {}", (avg_error / number_of_reads as f64).sqrt());
+        log::info!(
+            "Average error: {}",
+            (avg_error / number_of_reads as f64).sqrt()
+        );
         WorldTimer {
             offset: avg_difference,
         }
-    }
-    else {
+    } else {
         log::warn!("No time servers available");
-        WorldTimer {
-            offset: 0,
-        }
+        WorldTimer { offset: 0 }
     }
-
 }
-

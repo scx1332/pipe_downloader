@@ -1,9 +1,9 @@
 mod world_time;
 
+use crate::world_time::{init_world_time, world_time};
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
 use structopt::StructOpt;
-use crate::world_time::{init_world_time, world_time};
 
 #[derive(StructOpt, Debug)]
 struct Opt {
@@ -92,15 +92,15 @@ async fn main() -> std::io::Result<()> {
                 println!(
                     "Bytes per second: {} MB/s",
                     (stats.bytes_received - last_stats.bytes_received) as f64
-                        / (last_update - pre_last_update).as_secs_f64() / 1024.0 / 1024.0
+                        / (last_update - pre_last_update).as_secs_f64()
+                        / 1024.0
+                        / 1024.0
                 );
                 println!(
                     "Packets per second: {}",
                     (stats.packets_received - last_stats.packets_received) as f64
                         / (last_update - pre_last_update).as_secs_f64()
                 );
-
-
             }
             std::thread::sleep(std::time::Duration::from_secs(1));
             pre_last_update = last_update;
