@@ -1,8 +1,9 @@
-use std::fmt::format;
-use std::io::Bytes;
+mod world_time;
+
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
 use structopt::StructOpt;
+use crate::world_time::{init_world_time, world_time};
 
 #[derive(StructOpt, Debug)]
 struct Opt {
@@ -36,18 +37,18 @@ struct ServerStats {
 fn receive_udp(sock: UdpSocket, stats: Arc<Mutex<ServerStats>>) -> std::io::Result<()> {
     const SMALL_BUF: usize = 90000;
     let mut buf = Box::new(vec![0; SMALL_BUF]);
-    let mut localStats = ServerStats {
+    let mut local_stats = ServerStats {
         bytes_received: 0,
         packets_received: 0,
     };
     let mut last_update = std::time::Instant::now();
     loop {
-        let (len, addr) = sock.recv_from(&mut buf)?;
-        localStats.bytes_received += len as u64;
-        localStats.packets_received += 1;
+        let (len, _addr) = sock.recv_from(&mut buf)?;
+        local_stats.bytes_received += len as u64;
+        local_stats.packets_received += 1;
         if last_update.elapsed().as_secs_f64() > 0.1 {
             //update value behind lock only sometimes to improve perf
-            **stats.lock().as_mut().unwrap() = localStats;
+            *stats.lock().unwrap() = local_stats;
             last_update = std::time::Instant::now();
         }
     }
@@ -56,16 +57,22 @@ fn receive_udp(sock: UdpSocket, stats: Arc<Mutex<ServerStats>>) -> std::io::Resu
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> std::io::Result<()> {
     let opt: Opt = Opt::from_args();
-    println!("Listening on {}:{}", opt.listen_addr, opt.listen_port,);
+
+    init_world_time();
+    let world_time = world_time();
+    println!("World time without fix: {}", chrono::Utc::now());
+    println!("World time: {}", world_time.utc_time());
+    println!("World time without fix: {}", chrono::Utc::now());
 
     if opt.is_server {
+        println!("Listening on {}:{}", opt.listen_addr, opt.listen_port,);
         let sock = UdpSocket::bind(format!("{}:{}", opt.listen_addr, opt.listen_port)).unwrap();
         let server_stats = Arc::new(Mutex::new(ServerStats {
             bytes_received: 0,
             packets_received: 0,
         }));
         let server_stats_ = server_stats.clone();
-        let thread = std::thread::spawn(move || match receive_udp(sock, server_stats_.clone()) {
+        let _thread = std::thread::spawn(move || match receive_udp(sock, server_stats_) {
             Ok(_) => println!("UDP received"),
             Err(e) => println!("UDP error: {}", e),
         });
@@ -77,9 +84,7 @@ async fn main() -> std::io::Result<()> {
         let mut pre_last_update = std::time::Instant::now();
         let mut last_update = std::time::Instant::now();
         loop {
-            let stats = {
-                server_stats.lock().unwrap().clone()
-            };
+            let stats = *server_stats.lock().unwrap();
 
             if stats != last_stats {
                 println!("Bytes received: {}", stats.bytes_received);
@@ -102,17 +107,15 @@ async fn main() -> std::io::Result<()> {
             last_update = std::time::Instant::now();
             last_stats = stats;
         }
-        thread.join().unwrap();
     } else {
+        println!("Connecting to {}:{}", opt.connect_addr, opt.connect_port);
         let sock = UdpSocket::bind(format!("{}:{}", opt.listen_addr, opt.listen_port)).unwrap();
         let mut buf = Box::new(vec![0; 1100]);
         for i in 0..buf.len() {
             buf[i] = i as u8;
         }
         loop {
-            let len = sock.send_to(&buf, format!("{}:{}", opt.connect_addr, opt.connect_port))?;
+            let _len = sock.send_to(&buf, format!("{}:{}", opt.connect_addr, opt.connect_port))?;
         }
     }
-
-    Ok(())
 }

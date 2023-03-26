@@ -1,7 +1,7 @@
-use std::io::Read;
-use std::str::FromStr;
 use anyhow::anyhow;
 use reqwest::header::{HeaderMap, HeaderValue};
+use std::io::Read;
+use std::str::FromStr;
 
 fn main() -> anyhow::Result<()> {
     let client = reqwest::blocking::Client::new();
@@ -32,7 +32,6 @@ fn main() -> anyhow::Result<()> {
     let mut buf = vec![0; 1024 * 1024];
 
     loop {
-
         let left_to_download = content_length - total_downloaded;
         let max_buf_size = std::cmp::min(buf.len(), left_to_download);
         if max_buf_size == 0 {

@@ -9,3 +9,6 @@ license.workspace = true
 [dependencies]
 structopt = { workspace = true }
 tokio = { workspace = true, features = ["net"] }
+sntpc = { version = "0.3.2" }
+log = { workspace = true }
+chrono = { workspace = true }
