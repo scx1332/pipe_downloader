@@ -45,15 +45,31 @@ struct ServerStats {
 
 
 fn test_send_loop(packet_size: u16, packet_count: usize, sock: UdpSocket, addr: std::net::SocketAddr) {
+    const RATE_CHECKS_PER_SEC: usize = 20;
     let mut buf = vec![0; packet_size as usize];
 
     log::info!("Starting send loop on {:?}", sock.local_addr().unwrap());
     let mut packet_no: usize = 0;
+    let packet_rate = 1000;
+    let mut last_update = std::time::Instant::now();
+    let mut packets_sent = 0;
+
     loop {
+        if last_update.elapsed().as_secs_f64() > 1.0 / RATE_CHECKS_PER_SEC as f64 {
+            last_update = std::time::Instant::now();
+            packets_sent = 0;
+        }
+        if packets_sent >= packet_rate / RATE_CHECKS_PER_SEC {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            continue;
+        }
         packet_no += 1;
         buf[0..8].copy_from_slice(&packet_no.to_be_bytes());
 
+
         sock.send_to(&buf, addr).unwrap();
+        packets_sent += 1;
+
     }
 }
 
