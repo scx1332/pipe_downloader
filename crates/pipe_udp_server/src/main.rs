@@ -4,8 +4,6 @@ mod world_time;
 use crate::commands::{StartTest, START_TEST_HEADER};
 use crate::world_time::{init_world_time, world_time};
 
-use sha2::Digest;
-
 use std::env;
 use std::net::{SocketAddr, UdpSocket};
 use std::str::FromStr;
@@ -70,6 +68,7 @@ fn test_send_loop(start_test: StartTest, sock: UdpSocket, addr: std::net::Socket
     let base_packet_rate = start_test.base_packet_rate;
     let mut last_update = std::time::Instant::now();
     let mut packets_sent = 0;
+    let mut info_print = std::time::Instant::now();
 
     loop {
         let packet_rate =
@@ -77,6 +76,14 @@ fn test_send_loop(start_test: StartTest, sock: UdpSocket, addr: std::net::Socket
         if packet_rate > start_test.max_packet_rate {
             log::info!("Send loop finished");
             break;
+        }
+        if info_print.elapsed() > std::time::Duration::from_secs(5) {
+            info_print = std::time::Instant::now();
+            log::info!(
+                "Send test is active packet_rate: {} max_packet_rate: {}",
+                packet_rate,
+                start_test.max_packet_rate
+            );
         }
 
         if last_update.elapsed().as_secs_f64() > 1.0 / RATE_CHECKS_PER_SEC {
@@ -104,7 +111,7 @@ fn receive_udp(sock: UdpSocket, stats: Arc<Mutex<ServerStats>>) -> std::io::Resu
         packet_count: 0,
     };
     log::info!("Starting receive loop on {:?}", sock.local_addr()?);
-    let mut last_update = std::time::Instant::now();
+    //let mut last_update = std::time::Instant::now();
     loop {
         let (len, addr) = sock.recv_from(&mut buf)?;
 
@@ -143,7 +150,7 @@ fn receive_udp(sock: UdpSocket, stats: Arc<Mutex<ServerStats>>) -> std::io::Resu
         //{
         //update value behind lock only sometimes to improve perf
         *stats.lock().unwrap() = local_stats;
-        last_update = std::time::Instant::now();
+        //last_update = std::time::Instant::now();
         //}
     }
 }
@@ -238,65 +245,4 @@ async fn main() -> std::io::Result<()> {
         last_update = std::time::Instant::now();
         last_stats = stats;
     }
-
-    /* } else {
-    println!("Connecting to {}:{}", opt.connect_addr, opt.connect_port);
-    let sock = UdpSocket::bind(format!("{}:{}", opt.listen_addr, opt.listen_port)).unwrap();
-    let mut buf = Box::new(vec![0; 1100]);
-
-    let mut start_test = StartTest::new(1100, 10000);
-    let mut buf = START_TEST_HEADER.to_vec();
-    buf.extend(bincode::serialize(&start_test).unwrap());
-
-    sock.send_to(buf.as_slice(), format!("{}:{}", opt.connect_addr, opt.connect_port))?;
-
-    let sock_clone = sock.try_clone().unwrap();
-    let server_stats = Arc::new(Mutex::new(ServerStats {
-        bytes_received: 0,
-        packets_received: 0,
-    }));
-    let server_stats_ = server_stats.clone();
-    let _thread = std::thread::spawn(move || match receive_udp(sock, server_stats_) {
-        Ok(_) => println!("UDP received"),
-        Err(e) => println!("UDP error: {}", e),
-    });
-
-    let mut last_stats = ServerStats {
-        bytes_received: 0,
-        packets_received: 0,
-    };
-    let mut pre_last_update = std::time::Instant::now();
-    let mut last_update = std::time::Instant::now();
-    loop {
-        let stats = *server_stats.lock().unwrap();
-
-        if stats != last_stats {
-            println!("Bytes received: {}", stats.bytes_received);
-            //bytes per second
-            println!(
-                "Bytes per second: {} MB/s",
-                (stats.bytes_received - last_stats.bytes_received) as f64
-                    / (last_update - pre_last_update).as_secs_f64()
-                    / 1024.0
-                    / 1024.0
-            );
-            println!(
-                "Packets per second: {}",
-                (stats.packets_received - last_stats.packets_received) as f64
-                    / (last_update - pre_last_update).as_secs_f64()
-            );
-        }
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        pre_last_update = last_update;
-        last_update = std::time::Instant::now();
-        last_stats = stats;
-    }*/
-    /*for i in 0..buf.len() {
-        buf[i] = i as u8;
-    }
-    loop {
-        let _len = sock.send_to(&buf, format!("{}:{}", opt.connect_addr, opt.connect_port))?;
-    }*/
-
-    Ok(())
 }
