@@ -1,13 +1,13 @@
 use crate::world_time::{init_world_time, world_time};
+use serde::{Deserialize, Serialize};
+use sha2::digest::FixedOutput;
+use sha2::{Digest, Sha256, Sha512};
+use sha256::digest;
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
 use structopt::StructOpt;
-use sha2::{Sha256, Sha512, Digest};
-use sha256::digest;
-use sha2::digest::FixedOutput;
-use serde::{Serialize, Deserialize};
 
-pub const START_TEST_HEADER: [u8; 8] = [105,  93,  84, 170,  59, 220, 179, 253 ];
+pub const START_TEST_HEADER: [u8; 8] = [105, 93, 84, 170, 59, 220, 179, 253];
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct StartTest {
     pub msg_header: [u8; 8],
@@ -19,12 +19,18 @@ pub struct StartTest {
 }
 
 impl StartTest {
-    pub fn new(packet_size: u16, base_packet_rate: f64, packet_rate_increase: f64, max_packet_rate: f64) -> StartTest {
+    pub fn new(
+        packet_size: u16,
+        base_packet_rate: f64,
+        packet_rate_increase: f64,
+        max_packet_rate: f64,
+    ) -> StartTest {
         let mut st = StartTest {
             msg_header: START_TEST_HEADER,
             packet_size,
             base_packet_rate,
-            packet_rate_increase,max_packet_rate,
+            packet_rate_increase,
+            max_packet_rate,
             hash: [0; 32],
         };
         st.self_digest();
@@ -33,7 +39,7 @@ impl StartTest {
 
     fn digest(&self) -> [u8; 32] {
         //just change the salt to make sure that program is not working with previous versions
-        const SALT:[u8;10] = [12, 84, 233, 11, 110, 192, 211, 1, 88, 137];
+        const SALT: [u8; 10] = [12, 84, 233, 11, 110, 192, 211, 1, 88, 137];
         let mut s = Sha256::new();
         s.update(SALT);
         s.update(self.msg_header);
