@@ -3,10 +3,9 @@ mod world_time;
 
 use crate::commands::{StartTest, START_TEST_HEADER};
 use crate::world_time::{init_world_time, world_time};
-use serde::{Deserialize, Serialize};
-use sha2::digest::FixedOutput;
-use sha2::{Digest, Sha256, Sha512};
-use sha256::digest;
+
+use sha2::Digest;
+
 use std::env;
 use std::net::{SocketAddr, UdpSocket};
 use std::str::FromStr;
@@ -180,7 +179,7 @@ async fn main() -> std::io::Result<()> {
     });
 
     if !opt.is_server {
-        let mut start_test_server = StartTest::new(
+        let start_test_server = StartTest::new(
             opt.download_packet_size,
             opt.download_base_packet_rate,
             opt.download_packet_rate_increase,

@@ -1,11 +1,6 @@
-use crate::world_time::{init_world_time, world_time};
 use serde::{Deserialize, Serialize};
 use sha2::digest::FixedOutput;
-use sha2::{Digest, Sha256, Sha512};
-use sha256::digest;
-use std::net::UdpSocket;
-use std::sync::{Arc, Mutex};
-use structopt::StructOpt;
+use sha2::{Digest, Sha256};
 
 pub const START_TEST_HEADER: [u8; 8] = [105, 93, 84, 170, 59, 220, 179, 253];
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -55,7 +50,7 @@ impl StartTest {
     }
 
     fn self_digest(&mut self) {
-        let mut s = Sha256::new();
+        let _s = Sha256::new();
         self.hash = self.digest();
     }
 }
