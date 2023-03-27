@@ -34,6 +34,16 @@ struct Opt {
     /// Connect port
     #[structopt(long, default_value = "11501")]
     pub connect_port: u16,
+
+    #[structopt(long, default_value = "1200")]
+    pub packet_size: u16,
+    #[structopt(long, default_value = "1000")]
+    pub base_packet_rate: f64,
+    #[structopt(long, default_value = "100")]
+    pub packet_rate_increase: f64,
+    #[structopt(long, default_value = "10000")]
+    pub max_packet_rate: f64,
+
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,22 +54,26 @@ struct ServerStats {
 }
 
 
-fn test_send_loop(packet_size: u16, packet_count: usize, sock: UdpSocket, addr: std::net::SocketAddr) {
+fn test_send_loop(start_test: StartTest, sock: UdpSocket, addr: std::net::SocketAddr) {
     const RATE_CHECKS_PER_SEC: usize = 20;
-    let mut buf = vec![0; packet_size as usize];
+    let mut buf = vec![0; start_test.packet_size as usize];
+    let test_start = std::time::Instant::now();
+
 
     log::info!("Starting send loop on {:?}", sock.local_addr().unwrap());
     let mut packet_no: usize = 0;
-    let packet_rate = 1000;
+    let base_packet_rate = 1000;
     let mut last_update = std::time::Instant::now();
     let mut packets_sent = 0;
 
     loop {
+        let packet_rate = base_packet_rate + 100 * test_start.elapsed().as_secs();
+
         if last_update.elapsed().as_secs_f64() > 1.0 / RATE_CHECKS_PER_SEC as f64 {
             last_update = std::time::Instant::now();
             packets_sent = 0;
         }
-        if packets_sent >= packet_rate / RATE_CHECKS_PER_SEC {
+        if packets_sent >= packet_rate / RATE_CHECKS_PER_SEC as u64 {
             std::thread::sleep(std::time::Duration::from_millis(1));
             continue;
         }
@@ -94,8 +108,7 @@ fn receive_udp(sock: UdpSocket, stats: Arc<Mutex<ServerStats>>) -> std::io::Resu
                         let sock_clone = sock.try_clone().unwrap();
                         std::thread::spawn(move||{
                             test_send_loop(
-                                start_test.packet_size,
-                                start_test.packet_count,
+                                start_test,
                                 sock_clone,
                                 addr,
                             );
@@ -160,7 +173,7 @@ async fn main() -> std::io::Result<()> {
     });
 
     if !opt.is_server {
-        let mut start_test = StartTest::new(1100, 10000);
+        let mut start_test = StartTest::new(opt.packet_size, opt.base_packet_rate, opt.packet_rate_increase, opt.max_packet_rate);
         let mut buf = START_TEST_HEADER.to_vec();
         buf.extend(bincode::serialize(&start_test).unwrap());
 
@@ -172,8 +185,7 @@ async fn main() -> std::io::Result<()> {
         let sock_clone = sock.try_clone().unwrap();
         std::thread::spawn(move||{
             test_send_loop(
-                start_test.packet_size,
-                start_test.packet_count,
+                start_test,
                 sock_clone,
                 addr,
             );
