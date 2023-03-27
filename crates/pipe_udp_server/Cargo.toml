@@ -12,3 +12,8 @@ tokio = { workspace = true, features = ["net"] }
 sntpc = { version = "0.3.2" }
 log = { workspace = true }
 chrono = { workspace = true }
+sha256 = { workspace = true }
+sha2 = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+bincode = { workspace = true }
+env_logger = {workspace = true }
