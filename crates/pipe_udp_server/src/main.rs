@@ -55,25 +55,29 @@ struct ServerStats {
 
 
 fn test_send_loop(start_test: StartTest, sock: UdpSocket, addr: std::net::SocketAddr) {
-    const RATE_CHECKS_PER_SEC: usize = 20;
+    const RATE_CHECKS_PER_SEC: f64 = 20.0;
     let mut buf = vec![0; start_test.packet_size as usize];
     let test_start = std::time::Instant::now();
 
 
     log::info!("Starting send loop on {:?}", sock.local_addr().unwrap());
     let mut packet_no: usize = 0;
-    let base_packet_rate = 1000;
+    let base_packet_rate = start_test.base_packet_rate;
     let mut last_update = std::time::Instant::now();
     let mut packets_sent = 0;
 
     loop {
-        let packet_rate = base_packet_rate + 100 * test_start.elapsed().as_secs();
+        let packet_rate = base_packet_rate + start_test.packet_rate_increase * test_start.elapsed().as_secs_f64();
+        if packet_rate > start_test.max_packet_rate {
+            log::info!("Send loop finished");
+            break;
+        }
 
-        if last_update.elapsed().as_secs_f64() > 1.0 / RATE_CHECKS_PER_SEC as f64 {
+        if last_update.elapsed().as_secs_f64() > 1.0 / RATE_CHECKS_PER_SEC {
             last_update = std::time::Instant::now();
             packets_sent = 0;
         }
-        if packets_sent >= packet_rate / RATE_CHECKS_PER_SEC as u64 {
+        if packets_sent as f64 >= packet_rate / RATE_CHECKS_PER_SEC {
             std::thread::sleep(std::time::Duration::from_millis(1));
             continue;
         }
