@@ -197,7 +197,7 @@ async fn main() -> std::io::Result<()> {
 
         let addr = format!("{}:{}", opt.connect_addr, opt.connect_port);
         let addr = SocketAddr::from_str(&addr).unwrap();
-        sock.send_to(buf.as_slice(), &addr).unwrap();
+        sock.send_to(buf.as_slice(), addr).unwrap();
 
         let start_test = StartTest::new(
             opt.upload_packet_size,

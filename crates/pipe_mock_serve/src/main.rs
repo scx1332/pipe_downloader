@@ -1,12 +1,16 @@
-use actix_web::get;
+use actix_multipart::Multipart;
+
 use actix_web::http::header::ContentDisposition;
+use actix_web::{get, post, HttpRequest};
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use async_stream::stream;
 use bytes::Bytes;
 use bytes::BytesMut;
 use futures_core::stream::Stream;
+use futures_util::StreamExt;
+
 use std::iter::repeat_with;
-use std::path::PathBuf;
+
 use structopt::StructOpt;
 
 fn semi_random_stream(size: usize) -> impl Stream<Item = Result<Bytes, std::io::Error>> {
@@ -33,16 +37,12 @@ fn semi_random_stream(size: usize) -> impl Stream<Item = Result<Bytes, std::io::
 
 #[derive(StructOpt, Debug)]
 struct Opt {
-    /// Localization of static files
-    #[structopt(long, default_value = "static")]
-    pub serve_dir: PathBuf,
-
     /// Listen address
     #[structopt(long, default_value = "127.0.0.1")]
     pub listen_addr: String,
 
     /// Listen port
-    #[structopt(long, default_value = "3003")]
+    #[structopt(long, default_value = "5554")]
     pub listen_port: u16,
 }
 
@@ -61,22 +61,47 @@ async fn download(args: web::Path<usize>) -> impl Responder {
         .streaming(semi_random_stream(download_size))
 }
 
+#[post("/upload")]
+pub async fn upload(_req: HttpRequest, mut payload: Multipart) -> impl Responder {
+    if let Some(item) = payload.next().await {
+        let mut field = match item {
+            Ok(field) => field,
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Error when getting file from payload {err}"))
+            }
+        };
+
+        // Field in turn is stream of *Bytes* object
+        while let Some(chunk) = field.next().await {
+            match chunk {
+                Ok(chunk) => {
+                    println!("-- CHUNK: \n{:?}", std::str::from_utf8(&chunk));
+                }
+                Err(err) => {
+                    return HttpResponse::InternalServerError()
+                        .body(format!("Error when getting chunk from payload {err}"));
+                }
+            }
+        }
+        HttpResponse::Ok()
+            .content_type("text/html")
+            .body("Upload finished")
+    } else {
+        HttpResponse::InternalServerError().body("No upload file found")
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let opt: Opt = Opt::from_args();
-    println!(
-        "Listening on {}:{}, serving static files: {}, http://{}:{}/static",
-        opt.listen_addr,
-        opt.listen_port,
-        opt.serve_dir.display(),
-        opt.listen_addr,
-        opt.listen_port
-    );
+    println!("Listening on {}:{}", opt.listen_addr, opt.listen_port,);
 
     HttpServer::new(|| {
         App::new()
             .route("/", web::get().to(manual_hello))
             .service(download)
+            .service(upload)
     })
     .bind((opt.listen_addr, opt.listen_port))?
     .run()

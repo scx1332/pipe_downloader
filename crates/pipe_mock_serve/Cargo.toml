@@ -14,3 +14,4 @@ futures-core = { workspace = true }
 futures-util = { workspace = true }
 bytes = { workspace = true }
 fastrand = { workspace = true }
+actix-multipart = { workspace = true }

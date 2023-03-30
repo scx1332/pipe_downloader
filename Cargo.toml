@@ -47,6 +47,7 @@ rust-embed = "6.4.2"
 mime_guess = "2.0.4"
 actix-cors = "0.6.4"
 actix-web = "4.1.0"
+actix-multipart = "0.6.0"
 openssl-sys = { version="0.9.70", features = ["vendored"] }
 async-stream = "0.3.4"
 futures-core = "0.3.27"
