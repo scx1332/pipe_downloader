@@ -75,14 +75,14 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --release --target ${{ matrix.target }} -- --nocapture
+          args: --profile release-lto --target ${{ matrix.target }} -- --nocapture
 
       - name: Build binary target/${{ matrix.target }}/release/pipe_downloader
         uses: actions-rs/cargo@v1
         with:
           use-cross: ${{ matrix.use-cross }}
           command: build
-          args: --release --bin pipe_downloader --target ${{ matrix.target }}
+          args: --profile release-lto --bin pipe_downloader --target ${{ matrix.target }}
 
       - name: Upload
         uses: svenstaro/upload-release-action@2.3.0
