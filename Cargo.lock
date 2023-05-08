@@ -1598,6 +1598,7 @@ dependencies = [
  "tar",
  "tokio",
  "warp",
+ "zstd",
 ]
 
 [[package]]
@@ -1618,6 +1619,7 @@ dependencies = [
  "tar",
  "tokio",
  "xz2",
+ "zstd",
 ]
 
 [[package]]
