@@ -14,7 +14,7 @@ name = "pipe_downloader"
 [package]
 name = "pipe_downloader"
 description = "Fast downloader + extractor for *.tar.gz, *tar.lz4 and *.tar.bz2 files."
-version = "0.7.0"
+version = "0.7.1"
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
