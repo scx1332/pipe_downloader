@@ -279,8 +279,15 @@ pub fn init_download_loop(
 
     //check if server supports partial content
     if use_chunks {
-        let header = format!("bytes={}-{}", 1000, 2000);
-        let response = client.head(&download_url).header("Range", header).send()?;
+        let mut headers = header::HeaderMap::new();
+        headers.insert(
+            "User-Agent",
+            HeaderValue::from_str(&format!("pipe_downloader/{VERSION}")).unwrap(),
+        );
+        headers.insert("Range",HeaderValue::from_str(&format!("bytes={}-{}", 1000, 2000)).unwrap() );
+
+        let response = client.head(&download_url).headers(headers.clone()).send()?;
+
         if response.status() != StatusCode::PARTIAL_CONTENT {
             log::warn!("Server does not support partial content, falling back to single request. No retries after connection error will be possible");
             use_chunks = false;

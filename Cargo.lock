@@ -1573,7 +1573,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pipe_downloader"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "actix-cors",
  "actix-web",
@@ -1603,7 +1603,7 @@ dependencies = [
 
 [[package]]
 name = "pipe_downloader_lib"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "anyhow",
  "bzip2",
@@ -1624,7 +1624,7 @@ dependencies = [
 
 [[package]]
 name = "pipe_mock_serve"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "actix-multipart",
  "actix-web",
@@ -1638,7 +1638,7 @@ dependencies = [
 
 [[package]]
 name = "pipe_serve"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "structopt",
  "tokio",
@@ -1647,7 +1647,7 @@ dependencies = [
 
 [[package]]
 name = "pipe_udp_server"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "bincode",
  "chrono",
@@ -1663,7 +1663,7 @@ dependencies = [
 
 [[package]]
 name = "pipe_utils"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "anyhow",
  "bzip2",
