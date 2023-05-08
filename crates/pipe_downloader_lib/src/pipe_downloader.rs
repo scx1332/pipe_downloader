@@ -59,7 +59,7 @@ fn tar_unpack(
     let mut directories = Vec::new();
     for entry in tar.entries()? {
         let mut file = entry?;
-        println!(
+        log::debug!(
             "entry: {:?}, path {}",
             file.header().entry_type(),
             file.path()?.display()
