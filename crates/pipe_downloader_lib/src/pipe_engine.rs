@@ -381,7 +381,9 @@ pub fn download_loop(
                 .last()
                 .expect("Critical error unfinished chunks have to be here");
             if chunk_no - smallest_unfinished > thread_count {
-                //log::warn!("Waiting for chunk {}", i);
+                if progress_context.lock().unwrap().stop_requested {
+                    return Err(anyhow::anyhow!("Stop requested"));
+                }
                 std::thread::sleep(std::time::Duration::from_millis(100));
                 continue;
             }
