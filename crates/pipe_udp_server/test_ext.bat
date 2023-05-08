@@ -1,0 +1,1 @@
+cargo run --release -- --listen-addr 0.0.0.0 --listen-port 0 --connect-addr 145.239.69.80 --connect-port 11501
