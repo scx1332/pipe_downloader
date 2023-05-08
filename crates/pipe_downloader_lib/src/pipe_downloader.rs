@@ -233,6 +233,9 @@ impl PipeDownloader {
             } else if download_url.ends_with(".xz") {
                 let mut xz_dec = xz2::read::XzDecoder::new(&mut p);
                 decode_loop(pc.clone(), &options, &mut xz_dec, send_unpack_chunks)
+            } else if download_url.ends_with(".zst") {
+                let mut zstd_dec = zstd::stream::read::Decoder::new(&mut p).unwrap();
+                decode_loop(pc.clone(), &options, &mut zstd_dec, send_unpack_chunks)
             } else {
                 panic!("Unknown file type");
             };
