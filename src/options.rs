@@ -12,7 +12,13 @@ pub struct CliOptions {
 
     /// Output directory
     #[structopt(short = "o", long = "output-dir", parse(from_os_str))]
-    pub output_dir: PathBuf,
+    pub output_dir: Option<PathBuf>,
+
+    /// Ignore directory exists error
+    /// It will overwrite existing files matching tar add new files to existing directory
+    /// It won't remove files not present in tar, so final output may be a mix of old and new files
+    #[structopt(short = "f", long = "force")]
+    pub force: bool,
 
     /// Max bytes downloaded per seconds per one thread
     #[structopt(long = "limit-speed")]
@@ -46,9 +52,9 @@ pub struct CliOptions {
     #[structopt(long = "force-no-partial-content")]
     pub force_no_partial_content: bool,
 
-    /// No web UI/backend
-    #[structopt(long = "cli-only")]
-    pub cli_only: bool,
+    /// Enable web UI/backend
+    #[structopt(long = "frontend")]
+    pub frontend: bool,
 
     /// Listen address
     #[structopt(long, default_value = "127.0.0.1")]

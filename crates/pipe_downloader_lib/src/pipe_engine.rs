@@ -284,7 +284,10 @@ pub fn init_download_loop(
             "User-Agent",
             HeaderValue::from_str(&format!("pipe_downloader/{VERSION}")).unwrap(),
         );
-        headers.insert("Range",HeaderValue::from_str(&format!("bytes={}-{}", 1000, 2000)).unwrap() );
+        headers.insert(
+            "Range",
+            HeaderValue::from_str(&format!("bytes={}-{}", 1000, 2000)).unwrap(),
+        );
 
         let response = client.head(&download_url).headers(headers.clone()).send()?;
 

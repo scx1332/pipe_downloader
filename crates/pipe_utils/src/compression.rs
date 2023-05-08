@@ -71,5 +71,5 @@ pub async fn zstd_compress(source: PathBuf, destination: PathBuf) -> anyhow::Res
         let _res = encoder.finish().map_err(anyhow::Error::from)?;
         Ok(())
     })
-        .await
+    .await
 }

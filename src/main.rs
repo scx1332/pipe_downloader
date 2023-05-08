@@ -65,8 +65,9 @@ async fn main() -> anyhow::Result<()> {
         force_no_chunks: opt.force_no_partial_content,
         download_threads: opt.download_threads,
         ignore_symlinks: opt.ignore_symlinks,
+        ignore_directory_exists: opt.force,
     }
-    .start_download(&opt.url, &opt.output_dir)
+    .start_download(&opt.url, opt.output_dir)
     .await?;
 
     let server_data = Data::new(Box::new(ServerData {
@@ -74,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
     }));
     let server_data_cloned = server_data.clone();
 
-    let (srv, stop_handle) = if opt.cli_only {
+    let (srv, stop_handle) = if !opt.frontend {
         (None, None)
     } else {
         let srv = HttpServer::new(move || {

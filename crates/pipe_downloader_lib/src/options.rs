@@ -1,5 +1,5 @@
 use crate::PipeDownloader;
-use std::path::Path;
+use std::path::PathBuf;
 
 /// Pipe Downloader Options.
 #[derive(Debug, Clone)]
@@ -20,6 +20,8 @@ pub struct PipeDownloaderOptions {
     pub download_threads: usize,
     /// Ignore symlinks when un-taring
     pub ignore_symlinks: bool,
+    /// Ignore directory exists error
+    pub ignore_directory_exists: bool,
 }
 
 impl Default for PipeDownloaderOptions {
@@ -31,6 +33,7 @@ impl Default for PipeDownloaderOptions {
             force_no_chunks: false,
             download_threads: 2,
             ignore_symlinks: false,
+            ignore_directory_exists: false,
         }
     }
 }
@@ -40,7 +43,7 @@ impl PipeDownloaderOptions {
     pub async fn start_download(
         self,
         url: &str,
-        target_path: &Path,
+        target_path: Option<PathBuf>,
     ) -> anyhow::Result<PipeDownloader> {
         let mut pd = PipeDownloader::new(url, target_path, self);
         pd.start_download().await?;
