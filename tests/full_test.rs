@@ -111,6 +111,7 @@ async fn test_download_and_unpack() {
             force_no_chunks: false,
             download_threads: 10,
             ignore_symlinks: true,
+            ignore_directory_exists: true,
         }
         .start_download(
             format!(
@@ -118,7 +119,7 @@ async fn test_download_and_unpack() {
                 opt.listen_addr, opt.listen_port, compr
             )
             .as_str(),
-            &sd.join(format!("output_{}", compr)),
+            Some(sd.join(format!("output_{}", compr))),
         )
         .await
         .unwrap();
