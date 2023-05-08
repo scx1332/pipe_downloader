@@ -18,3 +18,4 @@ flate2 = { workspace = true }
 bzip2 = { workspace = true }
 xz2 = { workspace = true }
 log = { workspace = true }
+zstd = { workspace = true }

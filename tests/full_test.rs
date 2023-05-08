@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio::try_join;
 
 use pipe_downloader_lib::PipeDownloaderOptions;
-use pipe_utils::{build_random_file, bzip_compress, gzip_compress, lz4_compress, xz_compress};
+use pipe_utils::{build_random_file, bzip_compress, gzip_compress, lz4_compress, xz_compress, zstd_compress};
 
 #[derive(Debug, Clone)]
 struct Opt {
@@ -86,8 +86,9 @@ async fn test_download_and_unpack() {
     let f2 = gzip_compress(sd.join("foo.tar"), sd.join("foo.tar.gz"));
     let f3 = bzip_compress(sd.join("foo.tar"), sd.join("foo.tar.bz2"));
     let f4 = xz_compress(sd.join("foo.tar"), sd.join("foo.tar.xz"));
+    let f5 = zstd_compress(sd.join("foo.tar"), sd.join("foo.tar.zst"));
 
-    try_join!(f1, f2, f3, f4).unwrap();
+    try_join!(f1, f2, f3, f4, f5).unwrap();
 
     let opt = Opt {
         serve_dir: PathBuf::from(sd),
@@ -100,13 +101,14 @@ async fn test_download_and_unpack() {
         setup_server(&move_opt).await;
     });
 
-    for compr in ["lz4", "gz", "bz2", "xz"].iter() {
+    for compr in ["lz4", "gz", "bz2", "xz", "zst"].iter() {
         let pd = PipeDownloaderOptions {
             chunk_size_decoder: 10000000,
             chunk_size_downloader: 10000000,
             max_download_speed: None,
             force_no_chunks: false,
             download_threads: 10,
+            ignore_symlinks: true,
         }
         .start_download(
             format!(

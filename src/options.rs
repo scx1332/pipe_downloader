@@ -8,7 +8,6 @@ use structopt::StructOpt;
 )]
 pub struct CliOptions {
     /// Url of tar.gz or tar.lz4 file
-    #[structopt(long = "url")]
     pub url: String,
 
     /// Output directory

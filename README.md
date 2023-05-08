@@ -26,9 +26,13 @@ Currently, it supports:
 * archive.tar.lz4
 * archive.tar.gz
 * archive.tar.bz2
+* archive.tar.zst
+* archive.tar.xz
 * single_file.lz4
 * single_file.gz
 * single_file.bz2
+* single_file.zst
+* single_file.xz
 
 As base mode of operation it used PARTIAL_CONTENT (206) http status code, 
 which allows to continue operation when connection is lost (downloader waits patiently until chunk is available again).

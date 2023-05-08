@@ -63,3 +63,13 @@ pub async fn xz_compress(source: PathBuf, destination: PathBuf) -> anyhow::Resul
     })
     .await
 }
+
+pub async fn zstd_compress(source: PathBuf, destination: PathBuf) -> anyhow::Result<()> {
+    process_in_to_out(source, destination, |input_file, output_file| {
+        let mut encoder = zstd::Encoder::new(output_file, 5).unwrap();
+        std::io::copy(input_file, &mut encoder).map_err(anyhow::Error::from)?;
+        let _res = encoder.finish().map_err(anyhow::Error::from)?;
+        Ok(())
+    })
+        .await
+}
